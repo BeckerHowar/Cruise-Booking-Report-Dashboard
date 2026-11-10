@@ -1,125 +1,121 @@
 <h1 align="center">Cruise Booking Report Dashboard</h1>
 
 <p align="center">
-  An interactive, driver-based financial planning model —<br>
-  three tied statements, variance analysis, scenario planning and a self-writing board summary.
+  An 88-slide monthly booking report rebuilt as one live page —<br>
+  pace, revenue to-go, a profit bridge, a cash river and a scenario cockpit, all from one booking table.
 </p>
 
 <p align="center">
-  <a href="https://beckerhowar.github.io/FP-A-command-center/">
+  <a href="https://beckerhowar.github.io/Cruise-Booking-Report-Dashboard/">
     <img src="https://img.shields.io/badge/%E2%96%B6%20Open%20the%20live%20dashboard-1d6b52?style=for-the-badge&logoColor=white" alt="Open the live dashboard">
   </a>
 </p>
 
-<p align="center"><sub>Opens in the browser · nothing to install · all figures synthetic</sub></p>
+<p align="center"><sub>Opens in the browser · nothing to install · simulated data for a fictional line</sub></p>
 
 ---
-
-<!--
-  ADD SCREENSHOTS HERE (optional, takes about a minute):
-  1. Open your live dashboard and take two screenshots — the Board view and the Working model.
-  2. On GitHub, open this README and click the pencil icon to edit.
-  3. Drag each image file straight into the editor. GitHub uploads it and inserts the
-     markdown for you. Move the inserted lines to sit just below this comment.
-  4. Commit the change.
-  Delete this comment block once you have done it.
--->
 
 ## What it is
 
-A complete monthly operating model for **Voltway** — a fictional Energy-as-a-Service company that
-installs efficiency equipment at customer sites, retains ownership, leases it back for a fixed
-monthly fee, and funds the build-out with an equipment debt facility.
+A cruise line's monthly booking report usually lives in a slide deck: dozens of tables and charts, each
+pulled separately, each with its own filters. This page replaces that deck with a single dashboard for
+**Meridian Yacht Collection**, a fictional three-ship yacht line.
 
-Every figure on the page is generated from an editable assumption. Nothing is hard-coded, and every
-line item shows its formula on hover.
+Every view resolves to two tables: one row per suite booked on a voyage on a booking date, and one row
+per voyage carrying capacity, budget and forecast. Eighteen base measures and thirteen dimensions
+generate everything on the page. Move the as-of date, flip an adjustment or pull a cockpit slider and
+every view recomputes.
 
-The page opens on a **Board view** — the one-page summary an executive team would receive. Switch to
-**Working model** for the machinery behind it: drivers on the left, statements and analysis on the
-right.
+## The tabs
 
-## What it demonstrates
-
-| Capability | Where to see it |
-|---|---|
-| Driver-based budgeting and rolling forecasts | Driver panel · rolling 12-month forecast |
-| Budget-vs-actual variance analysis with a P&L bridge | EBITDA bridge, drillable to the line item |
-| Scenario and sensitivity analysis | Scenario lab · tornado chart with three metric views |
-| KPI dashboards with real-time visibility | Board view · KPI strip |
-| Subscription metrics: ARR, unit economics, retention | ARR walk · per-site payback · cohort grid |
-| Three-statement modelling | P&L → balance sheet → cash flow, tied every month |
-| Capital allocation: CAPEX, payback, ROI | Candidate deal ranking at an editable discount rate |
-| Board reporting that turns numbers into narrative | Board view — the variance commentary writes itself |
-| Automation applied to recurring finance work | Invoice guard — contracted-rate control |
+| Tab | What it answers | Deck slides it replaces |
+|---|---|---|
+| Flight deck | Where the book stands, what moved profit, where the cash went | 2–3, 7–8 |
+| Pace | Booking curves against prior years, booking window split, consolidated report by quarter | 22–28, 85–88 |
+| Revenue to-go | Target less booked, by ship, quarter, region and voyage | 9–21, 43–46 |
+| Channels | Channel mix and the strategic agency roster | 4–6 |
+| Suites | Suite tier mix against budget, and what each tier earns | 30–33 |
+| Guests | Guests sailed, bookers, repeaters, future-voyage conversion, guest geography | 34–37, 54–58, 73–78 |
+| Dilution & cancellations | Discount take rates, cancellation behaviour, the policies behind both | 38–42, 59–60 |
+| Voyages | Every voyage against forecast, budget and its own position three months ago | 61–72, 79–84 |
+| Revenue tables | Booking production for the month, trailing 3 months and trailing 12 | 48–51 |
+| Definitions & data | Every measure, dimension and adjustment, and the Sigma data contract | — |
 
 ## Things worth trying
 
-- **Edit any driver** and watch the forecast rebuild. Actuals stay fixed — history does not restate.
-- **Move the close** ("Actuals through") and the variance bridge, rolling forecast and board
-  commentary all re-cut around the new cutover. At a June close the narrative re-ranks its own
-  drivers and reports a different lead cause.
-- **Switch the business model** between a contracted lease and month-to-month cancellation to see
-  how retention structure changes the accounting for churned equipment.
-- **Flip the tornado metric** between EBITDA and cash. The ranking reorders completely — the drivers
-  that protect margin are not the drivers that protect the balance sheet.
-- **Compare scenarios.** The upside case earns more EBITDA and ends with *less* cash, because every
-  additional site deploys capital years before it pays back.
-- **Hover any line item or metric label** for its definition and formula.
+- **Pull a slider in the scenario cockpit** pinned to the bottom of the screen. Volume, price,
+  cancellations, dilution and fuel move the unsailed book only — closed months never restate — so the
+  outlook, the profit bridge and the cash river respond while the booked position stays put. Save a
+  scenario and it sits beside the base case in the scenarios table.
+- **Watch the cash river.** Guest receipts by ship flow in on the left; refunds, commissions, crew,
+  provisioning, fuel, debt service and reserves flow out on the right. Switch the window between YTD,
+  the full year and the next rolling twelve months.
+- **Click a bar in the profit bridge** to isolate one driver, or switch the baseline between budget,
+  forecast and the prior year. The bars always sum to the gap with no residual.
+- **Flip an adjustment.** Barter revenue, cruise-to-cruise transfers, non-revenue guests and voyages,
+  and proration are handled inconsistently from slide to slide in a deck. Here each is one switch
+  applied to every view at once.
+- **Press Replay** to step the as-of date forward month by month and watch the book fill in.
+- **Open a card's Table view** to see the numbers behind any chart.
 
-The badge beside the statements confirms the balance sheet ties in all 36 months. It is recomputed
-live and turns red if any assumption ever breaks the model.
+## Data sources
 
-## Modelling conventions
+The data source is a switch in the control bar.
 
-The full list sits in "The Fine Print" panel inside the app, where conventions describing
-operating methodology are deliberately blurred; the accounting and modeling conventions remain
-readable. The ones that matter most:
+**Simulated** generates a deterministic book — about 60,000 bookings on 540 voyages across five sailing
+years. Actuals are the plan run through deliberate deviations (a soft booking patch, regional demand
+shifts, a drydock overrun, a fuel spike), so every variance traces back to something that moved.
 
-- Equipment is leased under **operating leases** — the asset stays on Voltway's books and
-  depreciates, and the asset retains residual value at lease expiry.
-- Tax accrues on year-to-date pre-tax income within each fiscal year, trued up monthly.
-- Candidate investments are valued over their contracted term **plus** residual book value released
-  at lease end. No renewal revenue is assumed.
-- The EBITDA bridge is a chained decomposition: volume, rate and margin explain the gross profit
-  variance exactly, and with the cost lines the six components sum to the gap with no residual.
+**Sigma** reads the same two tables from a Sigma workbook when this page is embedded there as a plugin.
+Columns are matched by name; the full contract is listed on the Definitions & data tab and in
+[`app/sigma.js`](app/sigma.js). The connector follows Sigma's published plugin API and round-trips the
+simulated book in Sigma's column format in the test suite, but **it has not yet been run inside a
+workbook**. Operating costs are not part of a booking extract, so with Sigma data the profit bridge
+stops at ticket revenue less commissions and the cash river shows refunds and commissions only.
 
-## About the data
+## Integrity checks
 
-**Every figure is synthetic.** Voltway does not exist. The company, its customers, its vendors and
-all of its numbers were generated for this demonstration. Nothing originates from any real business.
+On every change the engine re-verifies six things, and the badge in the control bar turns red if any fails:
 
-The "actuals" are produced by the same engine as the forecast, run with deliberate month-by-month
-deviations — install slippage, a customer bankruptcy, pricing concessions, cost inflation, an
-unplanned legal settlement. Because they come from the model rather than being typed in, every
-dollar of variance decomposes back to a driver that moved.
+1. The profit bridge bars sum to the profit gap.
+2. The cash river conserves: cash in equals cash out plus reserves.
+3. Revenue to-go totals the same by ship and quarter, by region, and by quarter.
+4. Monthly bookings less cancellations equal the active book.
+5. Suite tiers and channels each add back to the total they split.
+6. Receipts less refunds to the close equal what each booking has paid in.
+
+## Running it
+
+Open `index.html` in a browser, or serve the folder:
+
+```bash
+python -m http.server 5178
+```
+
+Run the headless check, which renders every tab under a spread of control settings:
+
+```bash
+node tests/smoke.js
+```
 
 ## Construction
 
-A single self-contained HTML file. No frameworks, no build step, no external requests, no data
-stored anywhere. The finance engine is plain JavaScript — search the source for `MODEL ENGINE`.
+Plain HTML, CSS and JavaScript. No frameworks, no build step, and no network requests in simulated mode.
 
-I specified the driver map, statement structure and accounting conventions, then had the logic
-stress-tested for technical accounting articulation and Energy-as-a-Service industry realism
-before implementation. The build was AI-assisted; the
-financial logic, conventions and design decisions are mine, and I can defend any of them.
+| File | Role |
+|---|---|
+| `index.html` | Page shell and styling |
+| `app/data-sim.js` | Simulated booking and voyage tables |
+| `app/sigma.js` | Sigma connector and data contract |
+| `app/engine.js` | Every measure: position, pace, outlook, profit bridge, cash river, integrity checks |
+| `app/charts.js` | Hand-rolled SVG charts, including the cash river |
+| `app/views.js`, `app/views-detail.js` | The tabs |
+| `app/main.js` | State and wiring |
 
-Verification ran to roughly 230,000 automated assertions across randomised assumption sets: the
-balance sheet ties every month, cash reconciles, debt rolls forward, the variance bridge and ARR
-walk foot with no residual, NPV cross-checks against the closed-form annuity formula, and actuals
-are provably immune to forecast edits.
+I specified the measures, dimensions, adjustments and the deck-to-view map; the build was AI-assisted.
 
-## AI analysis protocol
+## About the data
 
-The analytical standards behind this model, written as an instruction set an AI can execute —
-governed definitions first, generation second: [AI_ANALYSIS_PROTOCOL.md](AI_ANALYSIS_PROTOCOL.md).
-The checklist is the analyst's; the machine just runs it fast.
-
-## Running it locally
-
-Clone the repository and open `index.html` in any browser. There is nothing to install.
-
----
-
-<p align="center">
-  <b>Becker Howar</b> · <a href="mailto:becker.howar@gmail.com">becker.howar@gmail.com</a>
-</p>
+**Every figure is synthetic.** Meridian Yacht Collection does not exist. Its ships, agencies, guests
+and all of its numbers were generated for this demonstration. Nothing originates from any real
+business, and this project is not affiliated with any cruise line or hotel brand.
