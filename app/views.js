@@ -308,10 +308,10 @@ function paceCard(D, ctx, year, num, id, wide) {
   const tgt = E.targetLabel(D, year), series = [
     { name: (year - 2) + ' sailings', color: 'var(--c8)', values: cv.y2.pct, dashed: '2 3', width: 1.5 },
     { name: (year - 1) + ' sailings', color: 'var(--ink-2)', values: cv.stly.pct, dashed: '5 3', width: 1.6 },
-    { name: year + ' sailings', color: 'var(--c1)', values: cv.cy.pct, width: 2.4 }].filter(s => s.values.some(v => v != null));
+    { name: year + ' sailings', color: 'var(--c1)', values: cv.cy.pct, width: 2.4, live: true }].filter(s => s.values.some(v => v != null));
   return H.card(id, num, year + ' booking pace', 'Cumulative booked revenue as a share of ' + tgt + ' · ' + H.shipName(D, ctx) +
     (cv.gap == null ? '' : ' · ' + U.pp(cv.gap) + ' vs the same point last year'),
-    H.body(C.lines({ labels, every: wide ? 3 : 6, width: wide ? 1120 : 640, height: wide ? 310 : 250, yFmt: C.axisPct, tipFmt: v => U.pct(v), markAt: cv.at, markLabel: 'as of', series,
+    H.body(C.lines({ labels, every: wide ? 3 : 6, width: wide ? 1120 : 640, height: wide ? 310 : 250, yFmt: C.axisPct, tipFmt: v => U.pct(v), markAt: cv.at, markLabel: 'as of', series, live: { year, denom: cv.cy.denom, start: cv.startMi },
       label: year + ' booking curve against prior years' })) +
     C.legend([{ name: year + ' sailings', color: 'var(--c1)' }, { name: (year - 1) + ', one year earlier', color: 'var(--ink-2)', dash: 1 }, { name: (year - 2) + ', two years earlier', color: 'var(--c8)', dash: 1 }]));
 }

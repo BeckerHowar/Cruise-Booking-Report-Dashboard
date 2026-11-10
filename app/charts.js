@@ -27,8 +27,8 @@ C.axisMoney = v => {
 };
 C.axisPct = v => Math.round(v * 100) + '%';
 
-const frame = (W, H, label, inner) =>
-  '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + U.esc(label || 'chart') + '">' +
+const frame = (W, H, label, inner, attrs) =>
+  '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img"' + (attrs || '') + ' aria-label="' + U.esc(label || 'chart') + '">' +
   '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="var(--chart-surface)" rx="6"/>' + inner + '</svg>';
 
 function grid(ticks, y, x0, x1, fmt) {
@@ -41,7 +41,9 @@ function grid(ticks, y, x0, x1, fmt) {
 }
 const xLabel = (x, H, text) => '<text x="' + x + '" y="' + (H - 9) + '" text-anchor="middle" font-size="' + FS + '" fill="var(--ink-2)">' + text + '</text>';
 
-/* Lines. o = { labels, series:[{name,color,values,dashed,width}], yFmt, tipFmt, every, markAt, markLabel, zero, width, height } */
+/* Lines. o = { labels, series:[{name,color,values,dashed,width,live}], yFmt, tipFmt, every, markAt, markLabel, zero, width, height, live }
+   With o.live = { year, denom, start }, the series flagged live, its end dot and the marker are tagged, and the
+   plot geometry is written onto the svg, so replay can extend that one line in place instead of redrawing the chart. */
 C.lines = function (o) {
   const W = o.width || 640, H = o.height || 250, pL = o.padL || 58, pR = 16, pT = 16, pB = 30;
   const iw = W - pL - pR, ih = H - pT - pB, N = o.labels.length, fmt = o.yFmt || C.axisMoney, tf = o.tipFmt || fmt;
@@ -58,8 +60,8 @@ C.lines = function (o) {
   for (let i = 0; i < N; i += every) g += xLabel(x(i), H, o.labels[i]);
   if (o.markAt != null && o.markAt >= 0 && o.markAt < N) {
     const mx = x(o.markAt);
-    g += '<line x1="' + mx + '" x2="' + mx + '" y1="' + pT + '" y2="' + (pT + ih) + '" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="2 3" opacity="0.8"/>' +
-         '<text x="' + (mx - 5) + '" y="' + (pT + 11) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)">' + (o.markLabel || '') + '</text>';
+    g += '<g class="live-mark" data-x="' + mx.toFixed(1) + '"><line x1="' + mx + '" x2="' + mx + '" y1="' + pT + '" y2="' + (pT + ih) + '" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="2 3" opacity="0.8"/>' +
+         '<text x="' + (mx - 5) + '" y="' + (pT + 11) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)">' + (o.markLabel || '') + '</text></g>';
   }
   let marks = '';
   for (const s of o.series) {
@@ -70,9 +72,10 @@ C.lines = function (o) {
       pen = true; lastI = i;
     });
     if (!d) continue;
-    marks += '<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="' + (s.width || 2) + '" stroke-linejoin="round"' +
+    const live = o.live && s.live;
+    marks += '<path' + (live ? ' class="live-line" data-base="' + d + '"' : '') + ' d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="' + (s.width || 2) + '" stroke-linejoin="round"' +
       (s.dashed ? ' stroke-dasharray="' + s.dashed + '" opacity="0.9"' : '') + '/>';
-    if (!s.dashed) marks += '<circle cx="' + x(lastI) + '" cy="' + y(s.values[lastI]) + '" r="3.4" fill="' + s.color + '" stroke="var(--chart-surface)" stroke-width="1.8"/>';
+    if (!s.dashed) marks += '<circle' + (live ? ' class="live-dot"' : '') + ' cx="' + x(lastI) + '" cy="' + y(s.values[lastI]) + '" r="3.4" fill="' + s.color + '" stroke="var(--chart-surface)" stroke-width="1.8"/>';
   }
   let hits = '';
   const step = N > 1 ? iw / (N - 1) : iw;
@@ -80,7 +83,9 @@ C.lines = function (o) {
     const rows = o.series.filter(s => s.values[i] != null).map(s => s.name + ': ' + tf(s.values[i])).join('\n');
     if (rows) hits += '<rect x="' + (x(i) - step / 2) + '" y="' + pT + '" width="' + step + '" height="' + ih + '" fill="transparent"' + tip(o.labels[i] + '\n' + rows) + '/>';
   }
-  return frame(W, H, o.label, g + marks + hits);
+  const L = o.live;
+  return frame(W, H, o.label, g + marks + hits, L ? ' class="livepace" data-year="' + L.year + '" data-denom="' + L.denom + '" data-start="' + L.start + '" data-n="' + N +
+    '" data-pl="' + pL + '" data-iw="' + iw + '" data-pt="' + pT + '" data-ih="' + ih + '" data-lo="' + lo + '" data-hi="' + hi + '"' : '');
 };
 
 /* Stacked bars. o = { labels, series:[{name,color,values}], pct, yFmt, tipFmt, line:{name,values,fmt,color}, fadeFrom, width, height } */

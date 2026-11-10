@@ -218,9 +218,9 @@ function render() {
 }
 
 /* ---------- replay ----------
-   One clock runs from the first close to the last. The fleet fill map is repainted in
-   place for every day the clock passes, so it flows; everything else on the tab is
-   redrawn as each month-end goes by. Every close is computed once before the clock
+   One clock runs from the first close to the last. The booking pace line is extended and
+   the fleet fill map repainted in place as the clock moves, so both flow; everything else
+   on the tab is redrawn as each month-end goes by. Every close is computed once before the clock
    starts, so those redraws do not stall the motion. */
 const REPLAY_SECONDS = 18;
 function stopReplay() {
@@ -228,11 +228,29 @@ function stopReplay() {
   cancelAnimationFrame(replay.raf); clearInterval(replay.timer);
   replay = null;
 }
-function paintMap(day) {
+// The booking pace line: its tip, end dot and "as of" marker move to where the given moment falls.
+// `at` is a fractional day, so the tip slides between days; the height uses the book at the whole day.
+function paintPace(at, tix) {
+  document.querySelectorAll('#view svg.livepace').forEach(svg => {
+    const d = svg.dataset, denom = +d.denom, line = svg.querySelector('.live-line');
+    if (!denom || !line) return;
+    let booked = 0;
+    for (const v of D.voyages) if (v.year === +d.year && (ctx.ship < 0 || v.ship === ctx.ship)) booked += tix[v.i];
+    // month-end points sit on whole indices; a day part-way through a month sits that far towards the next
+    const m = U.mi(Math.floor(at)), first = U.miStart(m), pos = (m - d.start - 1) + (at - first + 1) / (U.miEnd(m) - first + 1);
+    if (pos < 0 || pos > d.n - 1) return;
+    const x = +d.pl + pos / (d.n - 1) * d.iw;
+    const y = +d.pt + (1 - (U.clamp(booked / denom, +d.lo, +d.hi) - d.lo) / (d.hi - d.lo)) * d.ih;
+    line.setAttribute('d', line.dataset.base + 'L' + x.toFixed(1) + ' ' + y.toFixed(1));
+    const dot = svg.querySelector('.live-dot'), mark = svg.querySelector('.live-mark');
+    if (dot) { dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1)); }
+    if (mark) mark.setAttribute('transform', 'translate(' + (x - mark.dataset.x).toFixed(1) + ',0)');
+  });
+}
+function paintMap(day, tix) {
   const svg = document.querySelector('#view svg.fillmap');
-  if (!svg || svg.dataset.day === String(day)) return;
-  svg.dataset.day = day;
-  const tix = E.bookedAt(D, ctx, day), mode = svg.dataset.mode;
+  if (!svg) return;
+  const mode = svg.dataset.mode;
   svg.querySelectorAll('rect[data-v]').forEach(r => {
     const v = D.voyages[+r.dataset.v];
     if (!v.tgtRev) return;
@@ -270,8 +288,10 @@ function startReplay() {
       if (R.day >= last) { stopReplay(); ctx.asOf = last; render(); return; }
       let crossed = false;
       while (R.i + 1 < opts.length && R.day >= opts[R.i + 1]) { R.i++; crossed = true; }
-      if (crossed) { ctx.asOf = opts[R.i]; render(); }
-      paintMap(Math.floor(R.day));
+      if (crossed) { ctx.asOf = opts[R.i]; render(); R.painted = null; }     // a redraw replaces the charts, so paint them again
+      const day = Math.floor(R.day);
+      if (day !== R.painted) { R.tix = E.bookedAt(D, ctx, day); paintMap(day, R.tix); R.painted = day; }
+      paintPace(R.day, R.tix);
       R.raf = requestAnimationFrame(tick);
     };
     replay.raf = requestAnimationFrame(tick);

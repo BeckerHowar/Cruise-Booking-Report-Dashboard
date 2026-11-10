@@ -57,8 +57,8 @@ every view recomputes.
   applied to every view at once.
 - **Press Replay on the Pace tab** and watch the fleet fill map: one cell per voyage, by ship and sail
   date, shaded by share of target booked. The as-of line glides forward day by day through the last
-  twelve closes while the book fills in behind it, and the rest of the tab updates as each month-end
-  passes. Switch the map to Pace to see which voyages are ahead of or behind the booking curve.
+  twelve closes while the book fills in behind it, and the booking pace line beneath draws itself
+  continuously alongside. The tables and figures update as each month-end passes. Switch the map to Pace to see which voyages are ahead of or behind the booking curve.
 - **Watch the dots in the cash river.** Each one is a fixed amount of cash, so a stream gains or loses
   dots as the cockpit moves it.
 - **Open a card's Table view** to see the numbers behind any chart, or **CSV** to download them.
