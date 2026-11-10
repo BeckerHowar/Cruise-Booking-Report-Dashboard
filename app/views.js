@@ -5,17 +5,28 @@
 const CBR = root.CBR, U = CBR.util, E = CBR.engine, C = CBR.charts;
 const V = CBR.views = { render: {} };
 
+// scope lists the controls, beyond the as-of date and ship, that change a tab.
 V.LIST = [
-  { id: 'flight',   label: 'Flight deck',     slides: '2–3, 7–8', note: 'The one-page read: where the book stands, what moved profit, where the cash went. Every figure is assembled from the booking table.' },
-  { id: 'pace',     label: 'Pace',            slides: '22–28, 85–88', note: 'Booking curves against the same point in prior years, the booking window split, and the consolidated report by quarter.' },
-  { id: 'togo',     label: 'Revenue to-go',   slides: '9–21, 43–46', note: 'Target less booked, by ship, quarter, region and voyage.' },
-  { id: 'channels', label: 'Channels',        slides: '4–6', note: 'Channel mix and the strategic agency roster.' },
-  { id: 'suites',   label: 'Suites',          slides: '30–33', note: 'Suite tier mix against budget, and what each tier earns.' },
-  { id: 'guests',   label: 'Guests',          slides: '34–37, 54–58, 73–78', note: 'Guests sailed, bookers, repeaters, future-voyage conversion and guest geography.' },
-  { id: 'dilution', label: 'Dilution & cancellations', slides: '38–42, 59–60', note: 'Discount take rates, cancellation behaviour and the policies behind both.' },
-  { id: 'voyages',  label: 'Voyages',         slides: '61–72, 79–84', note: 'Every voyage against forecast, budget and its own position three months ago.' },
-  { id: 'revenue',  label: 'Revenue tables',  slides: '48–51', note: 'Booking production for the month, the trailing three months and the trailing twelve.' },
-  { id: 'defs',     label: 'Definitions & data', slides: 'all', note: 'Every measure, dimension and adjustment, the deck-to-view map, and the Sigma data contract.' },
+  { id: 'flight',   label: 'Flight deck',     slides: '2–3, 7–8', scope: ['year', 'window', 'cockpit'],
+    note: 'The one-page read: where the book stands, what moved profit, where the cash went.' },
+  { id: 'pace',     label: 'Pace',            slides: '22–28, 85–88', scope: ['year'],
+    note: 'Booking curves against the same point in prior years, the booking window split, and the consolidated report by quarter.' },
+  { id: 'togo',     label: 'Revenue to-go',   slides: '9–21, 43–46', scope: ['year', 'cockpit'],
+    note: 'Target less booked, by ship, quarter, region and voyage.' },
+  { id: 'channels', label: 'Channels',        slides: '4–6', scope: [],
+    note: 'Channel mix and the strategic agency roster, for bookings made this calendar year.' },
+  { id: 'suites',   label: 'Suites',          slides: '30–33', scope: [],
+    note: 'Suite tier mix against budget, and what each tier earns.' },
+  { id: 'guests',   label: 'Guests',          slides: '34–37, 54–58, 73–78', scope: ['year'],
+    note: 'Guests sailed, bookers, repeaters, future-voyage conversion and guest geography.' },
+  { id: 'dilution', label: 'Dilution & cancellations', slides: '38–42, 59–60', scope: [],
+    note: 'Discount take rates, cancellation behaviour and the policies behind both.' },
+  { id: 'voyages',  label: 'Voyages',         slides: '61–72, 79–84', scope: ['year'],
+    note: 'Every voyage against forecast, budget and its own position three months ago.' },
+  { id: 'revenue',  label: 'Revenue tables',  slides: '48–51', scope: [],
+    note: 'Booking production for the month, the trailing three months and the trailing twelve, across all sailing years.' },
+  { id: 'defs',     label: 'Definitions & data', slides: 'all', scope: [],
+    note: 'Every measure, dimension and adjustment, the deck-to-view map, and the Sigma data contract.' },
 ];
 
 V.ADJUSTMENTS = [
@@ -35,34 +46,54 @@ V.ADJUSTMENTS = [
     def: 'Full-ship charters are booked in one block and distort the booking-window split, so they are excluded from it.' },
 ];
 
+V.GLOSSARY = [
+  ['STLY', 'Same time last year: the prior year\'s sailings, as their book stood on the same calendar date a year earlier.'],
+  ['ITD', 'Inception to date: everything booked so far, since the voyage opened for sale.'],
+  ['YTD', 'Year to date: January through the as-of month.'],
+  ['YoY', 'Year on year: against the same period a year earlier.'],
+  ['Y-2', 'Two years earlier, at the same calendar point.'],
+  ['APCD', 'Available passenger cruise days: capacity, at two guests per suite, for every sailing day.'],
+  ['PCD', 'Passenger cruise day: one guest on board for one day. Guests × days.'],
+  ['LF', 'Load factor: PCDs ÷ APCDs. For unsailed voyages this is booking pace to date, not final occupancy.'],
+  ['GPD', 'Gross price per day: ticket revenue ÷ PCDs.'],
+  ['FCST', 'Forecast: the current-year full-year forecast.'],
+  ['BDGT', 'Budget.'],
+  ['C2C', 'Cruise-to-cruise transfer: a guest moving a booking from one voyage to another.'],
+  ['FVC', 'Future voyage booking: made on board or within 14 days of sailing.'],
+  ['Outlook', 'Sailed voyages at actual, plus the projected finish of every unsailed voyage.'],
+  ['Pace', 'Share of target booked, against where history says a voyage normally is this far from sailing.'],
+  ['pp', 'Percentage points: the gap between two percentages.'],
+];
+const GLOSS_RE = V.GLOSSARY.map(([t, d]) => [new RegExp('(^|[^A-Za-z])' + t.replace('-', '\\-') + 's?($|[^A-Za-z])'), t + ' — ' + d]);
+
 /* ---------- building blocks ---------- */
 const H = V.h = {};
+H.gloss = text => { const plain = String(text).replace(/<[^>]*>/g, ''); return GLOSS_RE.filter(([re]) => re.test(plain)).slice(0, 3).map(x => x[1]).join('\n'); };
 H.card = (id, num, title, sub, body, tools) =>
   '<section class="card" id="card-' + id + '"><div class="card-head"><div><h2><span class="num">' + num + '</span>' + title + '</h2>' +
-  (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>' + (tools ? '<div class="tools">' + tools + '</div>' : '') + '</div>' + body + '</section>';
-H.tableBtn = (id, ui) => '<button type="button" class="tbl-btn" data-act="table:' + id + '" aria-pressed="' + !!ui.tables[id] + '">' + (ui.tables[id] ? 'Chart' : 'Table') + '</button>';
-H.tabs = (act, items, cur, label) => '<div class="tabs" role="tablist" aria-label="' + (label || '') + '">' + items.map(([k, l]) =>
-  '<button role="tab" data-act="' + act + ':' + k + '" aria-selected="' + (String(k) === String(cur)) + '">' + l + '</button>').join('') + '</div>';
-H.stat = (label, def, value, ctx, cls) =>
-  '<div class="stat"><div class="st-l" title="' + U.esc(def || '') + '"><u>' + label + '</u></div><div class="st-v' + (cls ? ' ' + cls : '') + '">' + value + '</div>' +
-  (ctx ? '<div class="st-c">' + ctx + '</div>' : '') + '</div>';
-H.table = function (cols, rows, cls) {
-  let h = '<div class="tblwrap"><table class="grid ' + (cls || '') + '"><thead><tr>' +
-    cols.map(c => '<th class="' + (c.l ? 'l' : '') + '"' + (c.tip ? ' title="' + U.esc(c.tip) + '"' : '') + '>' + c.h + '</th>').join('') + '</tr></thead><tbody>';
+  (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div><div class="tools">' + (tools || '') + '</div></div>' + body + '</section>';
+H.showTable = (ui, id) => ui.tables[id] != null ? !!ui.tables[id] : !!ui.narrow;       // phones start on the numbers
+H.tableBtn = (id, ui) => '<button type="button" class="tbl-btn" data-act="table:' + id + '" aria-pressed="' + H.showTable(ui, id) + '">' + (H.showTable(ui, id) ? 'Chart' : 'Table') + '</button>';
+H.tabs = (act, items, cur, label) => '<div class="tabs" role="group" aria-label="' + (label || '') + '">' + items.map(([k, l, off]) =>
+  '<button type="button" data-act="' + act + ':' + k + '" aria-pressed="' + (String(k) === String(cur)) + '"' + (off ? ' disabled title="' + U.esc(off) + '"' : '') + '>' + l + '</button>').join('') + '</div>';
+H.table = function (cols, rows, cls, sortId) {
+  let h = '<div class="tblwrap"><table class="grid ' + (cls || '') + (sortId ? ' sortable' : '') + '"' + (sortId ? ' data-sort-id="' + sortId + '"' : '') + '><thead><tr>' +
+    cols.map(c => { const t = c.tip || H.gloss(c.h); return '<th class="' + (c.l ? 'l' : '') + '"' + (t ? ' title="' + U.esc(t) + '"' : '') + (sortId ? ' tabindex="0"' : '') + '>' + c.h + '</th>'; }).join('') + '</tr></thead><tbody>';
   for (const r of rows) {
     const cells = r.cells || r;
     h += '<tr class="' + (r.cls || '') + '">' + cells.map((c, i) => {
       const o = (c !== null && typeof c === 'object') ? c : { v: c };
-      return '<td class="' + ((cols[i] && cols[i].l) ? 'l ' : '') + (o.cls || '') + '"' + (o.style ? ' style="' + o.style + '"' : '') + (o.tip ? ' title="' + U.esc(o.tip) + '"' : '') + '>' + (o.v == null ? '—' : o.v) + '</td>';
+      return '<td class="' + ((cols[i] && cols[i].l) ? 'l ' : '') + (o.cls || '') + '"' + (o.style ? ' style="' + o.style + '"' : '') + (o.tip ? ' title="' + U.esc(o.tip) + '"' : '') +
+        (o.s != null ? ' data-s="' + o.s + '"' : '') + '>' + (o.v == null ? '—' : o.v) + '</td>';
     }).join('') + '</tr>';
   }
   return h + '</tbody></table></div>';
 };
 // A signed cell coloured by whether the direction is good news.
 H.delta = (v, fmt, goodUp, eps) => (v == null || !isFinite(v)) ? { v: '—' }
-  : { v: fmt(v), cls: Math.abs(v) < (eps == null ? 1e-9 : eps) ? '' : ((v > 0) === (goodUp !== false) ? 'fav' : 'unfav') };
+  : { v: fmt(v), s: v, cls: Math.abs(v) < (eps == null ? 1e-9 : eps) ? '' : ((v > 0) === (goodUp !== false) ? 'fav' : 'unfav') };
+H.tone = (v, goodUp, eps) => Math.abs(v) < (eps == null ? 1e-9 : eps) ? '' : ((v > 0) === (goodUp !== false) ? 'up' : 'dn');
 H.body = html => '<div class="chart-body">' + html + '</div>';
-H.lead = html => '<p class="lead">' + html + '</p>';
 H.shipName = (D, ctx) => ctx.ship < 0 ? 'Consolidated' : D.dims.ships[ctx.ship].name;
 H.months = (from, to) => { const a = []; for (let m = from; m <= to; m++) a.push(m); return a; };
 H.listOf = arr => arr.length <= 1 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1];
@@ -76,32 +107,53 @@ V.scenTag = function (ctx) {
   if (s.fuel) p.push('Fuel ' + U.signedPct(s.fuel, 0));
   return p;
 };
+V.bridgeBase = (D, ctx, ui) => ui.bridgeBase === 'fc' && !E.hasForecast(D, ctx) ? 'bud' : ui.bridgeBase;
+const BASE_NAME = { bud: 'Budget', fc: 'Forecast', stly: 'Prior year' };
 
 /* =====================================================================
    FLIGHT DECK
    ===================================================================== */
+// One sentence and three figures: the read for someone who stops here.
+function hero(D, ctx, ui) {
+  const Hd = E.headline(D, ctx), [a, b] = Hd.years, br = E.bridge(D, ctx, 'bud');
+  if (!a) return '';
+  const fig = (label, value, sub, tone, tipText) => '<div class="hero-fig"' + (tipText ? ' title="' + U.esc(tipText) + '"' : '') + '><div class="hf-l">' + label + '</div><div class="hf-v">' + value +
+    '</div><div class="hf-s' + (tone ? ' ' + tone : '') + '">' + sub + '</div></div>';
+  const over = a.togo < 0;
+  const paceGap = b && b.lyPct != null ? b.pct - b.lyPct : null;
+  const parts = [
+    a.year + ' is <b>' + U.pct(a.pct) + ' booked</b> against ' + a.label + ', with ' + (over ? U.money(-a.togo) + ' over target' : '<b>' + U.money(a.togo) + '</b> still to go'),
+    'voyage profit ' + (br.W.forecast ? 'is tracking ' : 'closed ') + (Math.abs(br.gap) < 5e4 ? 'in line with budget' : '<span class="' + (br.gap < 0 ? 'dn' : 'up') + '">' + U.money(Math.abs(br.gap)) + (br.gap < 0 ? ' below' : ' above') + ' budget</span>') + ' for ' + br.W.short,
+  ];
+  if (paceGap != null) parts.push(b.year + ' bookings are <span class="' + (paceGap < 0 ? 'dn' : 'up') + '">' + (Math.abs(paceGap) < 0.0005 ? 'level with' : U.pct(Math.abs(paceGap)).replace('%', ' points') + (paceGap < 0 ? ' behind' : ' ahead of')) +
+    '</span> where ' + (b.year - 1) + ' stood a year ago');
+  const sentence = parts.join('; ') + '.';
+  return '<section class="hero"><p class="hero-line">' + sentence.charAt(0).toUpperCase() + sentence.slice(1) + '</p><div class="hero-figs">' +
+    fig(a.year + ' booked', U.money(a.tix), U.pct(a.pct) + ' of ' + a.label + ' · ' + (over ? U.money(-a.togo) + ' over' : U.money(a.togo) + ' to go'), '',
+        'Ticket revenue on the books for ' + a.year + ' sailings: active bookings net of dilution, plus cancellation fees kept.') +
+    fig('Voyage profit · ' + br.W.short, U.money(br.act.profit), U.signedMoney(br.gap) + ' vs budget', H.tone(br.gap, true, 5e4),
+        'Ticket revenue less commissions, voyage costs and shoreside cost, for the window selected in the control bar.') +
+    (b ? fig(b.year + ' booked', U.pct(b.pct), 'of ' + b.label + (paceGap == null ? '' : ' · ' + U.pp(paceGap) + ' vs STLY'), paceGap == null ? '' : H.tone(paceGap, true, 0.0005),
+             'Share of target secured, against the share ' + (b.year - 1) + ' sailings had secured at the same calendar point a year earlier.')
+       : fig('Load factor ' + a.year, U.pct(a.lf), 'booking pace to date', '', H.gloss('LF'))) +
+    '</div></section>';
+}
+
 function kpis(D, ctx) {
-  const Hd = E.headline(D, ctx), [a, b] = Hd.years, am = U.mi(ctx.asOf);
-  const tile = (label, value, sub, cls, tip) =>
-    '<div class="kpi"' + (tip ? ' title="' + U.esc(tip) + '"' : '') + '><div class="k-label">' + label + '</div><div class="k-value">' + value + '</div>' +
-    '<div class="k-ctx' + (cls ? ' ' + cls : '') + '">' + sub + '</div></div>';
-  const sign = (v, good) => Math.abs(v) < 1e-9 ? '' : ((v > 0) === good ? 'fav' : 'unfav');
+  const Hd = E.headline(D, ctx), a = Hd.years[0], am = U.mi(ctx.asOf);
+  if (!a) return '';
+  const tile = (label, value, plain, delta, tone, tipText) =>
+    '<div class="kpi"' + (tipText ? ' title="' + U.esc(tipText) + '"' : '') + '><div class="k-label">' + label + '</div><div class="k-value">' + value + '</div>' +
+    '<div class="k-ctx">' + (delta ? '<span class="' + (tone || '') + '">' + delta + '</span> ' : '') + plain + '</div></div>';
   const dOut = a.outlook - a.tgt, yoy = Hd.netLy ? Hd.netMonth / Hd.netLy - 1 : null;
   return '<div class="kpis">' +
-    tile(a.year + ' booked', U.money(a.tix), U.pct(a.pct) + ' of ' + a.label + ' · ' + U.money(Math.max(0, a.togo)) + ' to go', '',
-         'Ticket revenue on the books for ' + a.year + ' sailings: active bookings net of dilution, plus cancellation fees kept.') +
-    tile(b.year + ' booked', U.money(b.tix), U.pct(b.pct) + ' of ' + b.label + ' · ' + U.pp(b.pct - b.lyPct) + ' vs STLY', sign(b.pct - b.lyPct, true),
-         'Share of target secured, against the share ' + (b.year - 1) + ' sailings had secured at the same calendar point a year earlier.') +
-    tile(a.year + ' outlook', U.money(a.outlook), U.signedMoney(dOut) + ' vs ' + a.label, sign(dOut, true),
+    tile(a.year + ' outlook', U.money(a.outlook), 'vs ' + a.label, U.signedMoney(dOut), H.tone(dOut, true, 5e4),
          'Sailed voyages at actual plus the projected finish of every unsailed voyage. The scenario cockpit moves the projected part.') +
-    tile('Load factor ' + a.year, U.pct(a.lf), U.pp(a.lf - a.lyLf) + ' vs STLY', sign(a.lf - a.lyLf, true),
-         'Passenger cruise days booked over available passenger cruise days. Booking pace to date, not final occupancy.') +
-    tile('GPD ' + a.year, U.dollars(a.gpd), U.signedMoney(a.gpd - a.tgtGpd) + ' vs ' + a.label, sign(a.gpd - a.tgtGpd, true),
-         'Gross price per day: ticket revenue over passenger cruise days.') +
-    tile('Net bookings, ' + U.miLabel(am), U.money(Hd.netMonth), yoy == null ? 'no prior-year month' : U.signedPct(yoy) + ' vs ' + U.miLabel(am - 12), yoy == null ? '' : sign(yoy, true),
-         'Bookings produced in the month, less the month\'s cancellations, plus cancellation fees.') +
-    tile('Guest deposits held', U.money(Hd.held), 'paid in on unsailed voyages', '',
-         'Cash already collected from guests for voyages that have not sailed yet.') +
+    tile('Load factor ' + a.year, U.pct(a.lf), 'vs STLY', a.lyLf == null ? '' : U.pp(a.lf - a.lyLf), a.lyLf == null ? '' : H.tone(a.lf - a.lyLf, true, 0.0005), H.gloss('LF STLY')) +
+    tile('GPD ' + a.year, U.dollars(a.gpd), 'vs ' + a.label, a.tgtGpd ? (a.gpd - a.tgtGpd >= 0 ? '+' : '−') + U.dollars(Math.abs(a.gpd - a.tgtGpd)) : '', a.tgtGpd ? H.tone(a.gpd - a.tgtGpd, true, 0.5) : '', H.gloss('GPD')) +
+    tile('Net bookings, ' + U.miLabel(am), U.money(Hd.netMonth), yoy == null ? 'no prior-year month' : 'vs ' + U.miLabel(am - 12), yoy == null ? '' : U.signedPct(yoy), yoy == null ? '' : H.tone(yoy, true, 0.0005),
+         'Bookings produced in the month across all sailing years, less the month\'s cancellations, plus cancellation fees.') +
+    tile('Guest deposits held', U.money(Hd.held), 'paid in on unsailed voyages', '', '', 'Cash already collected from guests for voyages that have not sailed yet.') +
     '</div>';
 }
 
@@ -116,10 +168,10 @@ function bridgeSteps(D, br, baseName) {
 }
 
 function bridgeCard(D, ctx, ui) {
-  const br = E.bridge(D, ctx, ui.bridgeBase), names = { bud: 'Budget', fc: 'Forecast', stly: 'Prior year' };
-  const B = br.base, A = br.act, gp = (x, y) => y ? x / y : null;
+  const base = V.bridgeBase(D, ctx, ui), br = E.bridge(D, ctx, base), hasFc = E.hasForecast(D, ctx);
+  const B = br.base, A = br.act, gp = (x, y) => y ? x / y : null, end = br.W.forecast ? 'Outlook' : 'Actual';
   let body;
-  if (ui.tables.bridge) {
+  if (H.showTable(ui, 'bridge')) {
     const row = (comp, label, b, a, fmt, impact, sub) => ({
       cls: (sub ? 'sub' : '') + (ui.focus && comp !== ui.focus && !sub ? ' dim' : ''),
       cells: [label, b == null ? '—' : fmt(b), a == null ? '—' : fmt(a),
@@ -143,24 +195,26 @@ function bridgeCard(D, ctx, ui) {
       row('voy', 'Voyage costs', -B.voy, -A.voy, U.money, br.comps.voy, true),
       row('shore', 'Marketing, shoreside and G&A', -B.shore, -A.shore, U.money, br.comps.shore));
     rows.push(row(null, 'Voyage profit', B.profit, A.profit, U.money, br.gap, true));
-    body = H.table([{ h: 'Driver / line', l: 1 }, { h: names[br.baseline] }, { h: br.W.forecast ? 'Outlook' : 'Actual' }, { h: 'Change' }, { h: 'Profit impact' }], rows, 'varn');
+    body = H.table([{ h: 'Driver / line', l: 1 }, { h: BASE_NAME[base] }, { h: end }, { h: 'Change' }, { h: 'Profit impact' }], rows, 'varn');
   } else {
-    body = H.body(C.waterfall(bridgeSteps(D, br, names[br.baseline]), { focus: ui.focus, label: 'Profit bridge, ' + names[br.baseline] + ' to ' + (br.W.forecast ? 'outlook' : 'actual') }));
+    body = H.body(C.waterfall(bridgeSteps(D, br, BASE_NAME[base]), { focus: ui.focus, label: 'Profit bridge, ' + BASE_NAME[base] + ' to ' + end.toLowerCase() }));
   }
   const pct = B.profit ? br.gap / Math.abs(B.profit) : null;
   return H.card('bridge', '02', 'Profit bridge',
-    'Voyage profit, ' + names[br.baseline].toLowerCase() + ' to ' + (br.W.forecast ? 'outlook' : 'actual') + ' · ' + br.W.label + ' · ' + H.shipName(D, ctx) +
+    'Voyage profit, ' + BASE_NAME[base].toLowerCase() + ' to ' + end.toLowerCase() + ' · ' + br.W.label + ' · ' + H.shipName(D, ctx) +
     ' · ' + (br.gap >= 0 ? 'favourable ' : 'unfavourable ') + U.money(Math.abs(br.gap)) + (pct == null ? '' : ' (' + U.signedPct(pct, 0) + ')'),
-    body + '<div class="foot-note">Each bar swaps one driver from ' + names[br.baseline].toLowerCase() + ' to ' + (br.W.forecast ? 'outlook' : 'actual') +
-    ' and holds the rest. The bars sum to the gap exactly, with no residual. Click a bar to isolate it.' +
+    body + '<div class="foot-note">Each bar swaps one driver from ' + BASE_NAME[base].toLowerCase() + ' to ' + end.toLowerCase() +
+    ' and holds the rest, so the bars sum to the gap exactly. Click a bar to isolate it.' +
+    (ui.bridgeBase === 'fc' && !hasFc ? ' There is no forecast for this window, so the comparison is against budget.' : '') +
     (D.costs ? '' : ' Operating costs are not in the booking extract, so this bridge stops at ticket revenue less commissions.') + '</div>',
-    H.tabs('bridge', [['bud', 'vs Budget'], ['fc', 'vs Forecast'], ['stly', 'vs Prior year']], ui.bridgeBase, 'Bridge baseline') + H.tableBtn('bridge', ui));
+    H.tabs('bridge', [['bud', 'vs Budget'], ['fc', 'vs Forecast', hasFc ? '' : 'No forecast exists for this window; forecasts cover the current sailing year only.'], ['stly', 'vs Prior year']], base, 'Bridge baseline') +
+    H.tableBtn('bridge', ui));
 }
 
 function riverCard(D, ctx, ui) {
   const rv = E.river(D, ctx);
   let body;
-  if (ui.tables.river) {
+  if (H.showTable(ui, 'river')) {
     const n = Math.max(rv.sources.length, rv.uses.length), rows = [];
     for (let i = 0; i < n; i++) {
       const s = rv.sources[i], u = rv.uses[i];
@@ -185,21 +239,21 @@ function riverCard(D, ctx, ui) {
 function cashMonthsCard(D, ctx, ui) {
   const rows = E.cashMonths(D, ctx, 9, 12), cut = rows.findIndex(r => r.forecast);
   let body;
-  if (ui.tables.cashm) {
+  if (H.showTable(ui, 'cashm')) {
     body = H.table([{ h: 'Month', l: 1 }, { h: 'Guest receipts' }, { h: 'Refunds' }, { h: 'Commissions' }, { h: 'Operating' }, { h: 'Debt & drydock' }, { h: 'Net cash' }],
       rows.map(r => ({ cls: r.forecast ? 'memo' : '', cells: [U.miLabel(r.mi) + (r.forecast ? ' · sched.' : ''), U.money(r.cashIn), U.money(-r.refunds), U.money(-r.comm),
                        U.money(-r.ops), U.money(-(r.debt + r.dry)), H.delta(r.net, U.signedMoney, true, 0.5)] })));
   } else {
     body = H.body(C.signed({ labels: rows.map(r => U.miLabel(r.mi)), values: rows.map(r => r.net), fadeFrom: cut < 0 ? null : cut, markAt: cut < 0 ? null : cut,
-      tips: rows.map(r => 'Receipts ' + U.money(r.cashIn) + ', out ' + U.money(r.cashOut)), tipFmt: U.signedMoney, label: 'Net cash by month' }));
+      tips: rows.map(r => 'Receipts ' + U.money(r.cashIn) + ', paid out ' + U.money(r.cashOut)), tipFmt: U.signedMoney, label: 'Net cash by month' }));
   }
-  return H.card('cashm', '04', 'Net cash by month', 'Receipts less everything paid out · nine months closed, twelve scheduled', body, H.tableBtn('cashm', ui));
+  return H.card('cashm', '06', 'Net cash by month', 'Receipts less everything paid out · closed months, then the schedule ahead', body, H.tableBtn('cashm', ui));
 }
 
 V.scenarioMetrics = function (D, ctx, scen) {
-  const c = { ...ctx, scen }, cy = U.miYear(U.mi(ctx.asOf));
+  const c = { ...ctx, scen }, y = ctx.year, has = D.voyages.some(v => v.year === y + 1);
   const br = E.bridge(D, c, 'bud'), rv = E.river(D, c);
-  return { out0: E.outlookTotal(D, c, cy).tix, out1: E.outlookTotal(D, c, cy + 1).tix, profit: br.act.profit, gap: br.gap, reserves: rv.net, cy, W: br.W };
+  return { y, out0: E.outlookTotal(D, c, y).tix, out1: has ? E.outlookTotal(D, c, y + 1).tix : null, profit: br.act.profit, gap: br.gap, reserves: rv.net, W: br.W };
 };
 
 function scenariosCard(D, ctx, ui) {
@@ -208,99 +262,111 @@ function scenariosCard(D, ctx, ui) {
   const saved = ui.saved ? V.scenarioMetrics(D, ctx, ui.saved) : null;
   const tagOf = s => V.scenTag({ scen: s }).join(' · ') || 'no adjustments';
   const cell = (m, k, isBase) => {
-    if (!m) return { v: '—' };
+    if (!m || m[k] == null) return { v: '—' };
     if (isBase) return U.money(m[k]);
     const d = m[k] - base[k];
     return { v: U.money(m[k]) + (Math.abs(d) > 500 ? ' <small>' + U.signedMoney(d) + '</small>' : ''), cls: Math.abs(d) < 500 ? '' : d > 0 ? 'fav' : 'unfav' };
   };
   const line = (label, k) => [label, cell(base, k, true), cell(saved, k), cell(live, k)];
-  const rows = [
-    line(base.cy + ' revenue outlook', 'out0'),
-    line((base.cy + 1) + ' revenue outlook', 'out1'),
-    line('Voyage profit · ' + base.W.short, 'profit'),
-    line('Profit vs budget · ' + base.W.short, 'gap'),
-    line('Cash to reserves · ' + base.W.short, 'reserves'),
-  ];
-  return H.card('scen', '05', 'Scenarios, side by side', 'Colour shows better or worse than base',
+  const rows = [line(base.y + ' revenue outlook', 'out0')];
+  if (base.out1 != null) rows.push(line((base.y + 1) + ' revenue outlook', 'out1'));
+  rows.push(line('Voyage profit · ' + base.W.short, 'profit'), line('Profit vs budget · ' + base.W.short, 'gap'), line('Cash to reserves · ' + base.W.short, 'reserves'));
+  return H.card('scen', '05', 'Scenarios, side by side', 'The base case against a saved scenario and the cockpit as it is set now',
     H.table([{ h: '', l: 1 }, { h: 'Base' }, { h: 'Saved', tip: ui.saved ? tagOf(ui.saved) : 'Nothing saved yet. Set the cockpit and press Save.' }, { h: 'Cockpit now', tip: tagOf(ctx.scen) }], rows, 'scen') +
-    '<div class="foot-note"><b>Saved:</b> ' + (ui.saved ? tagOf(ui.saved) : 'nothing saved yet — set the cockpit and press Save') +
-    '. <b>Cockpit now:</b> ' + tagOf(ctx.scen) + '. The cockpit moves the unsailed book only; closed months never restate' +
-    (base.W.forecast ? '.' : ', so the ' + base.W.short + ' rows do not respond to it.') + '</div>');
+    '<div class="foot-note"><b>Saved:</b> ' + (ui.saved ? tagOf(ui.saved) : 'nothing yet — set the cockpit and press Save') +
+    '. <b>Cockpit now:</b> ' + tagOf(ctx.scen) + '. The cockpit moves unsailed voyages only' +
+    (base.W.forecast ? '.' : ', so the ' + base.W.short + ' rows, which cover closed months, do not respond to it.') + '</div>');
 }
 
-function paceCard(D, ctx, year, num, id) {
+function sinceCard(D, ctx) {
+  const m = E.monthChange(D, ctx), rows = [], am = U.mi(ctx.asOf);
+  const line = (label, was, now, fmt, dfmt, goodUp, eps) => rows.push([label, was == null ? '—' : fmt(was), now == null ? '—' : fmt(now),
+    (was == null || now == null) ? '—' : H.delta(now - was, dfmt, goodUp, eps)]);
+  m.now.years.forEach((n, i) => {
+    const w = m.was.years[i];
+    if (!w) return;
+    line(n.year + ' booked', w.tix, n.tix, U.money, U.signedMoney, true, 500);
+    line(n.year + ' share of ' + n.label, w.pct, n.pct, U.pct, U.pp, true, 0.0005);
+    if (i === 0) line(n.year + ' outlook', w.outlook, n.outlook, U.money, U.signedMoney, true, 5e4);
+    if (n.lyPct != null && w.lyPct != null) line(n.year + ' gap to STLY', w.pct - w.lyPct, n.pct - n.lyPct, U.pp, U.pp, true, 0.0005);
+  });
+  line('Net bookings in the month', m.was.netMonth, m.now.netMonth, U.money, U.signedMoney, true, 500);
+  line('Guest deposits held', m.was.held, m.now.held, U.money, U.signedMoney, true, 500);
+  const mv = x => '<b>' + x.v.code + '</b> ' + U.signedMoney(x.delta);
+  return H.card('since', '04', 'Since the last close', U.dateLabel(m.prev) + ' to ' + U.dateLabel(ctx.asOf) + ' · ' + H.shipName(D, ctx),
+    H.table([{ h: '', l: 1 }, { h: U.miLabel(am - 1) }, { h: U.miLabel(am) }, { h: 'Change' }], rows) +
+    '<div class="foot-note">' + (m.up.length ? 'Biggest pickup: ' + m.up.slice(0, 3).map(mv).join(', ') + '. ' : '') +
+    (m.down.length ? 'Lost ground: ' + m.down.map(mv).join(', ') + '.' : 'No unsailed voyage lost ground in the month.') + '</div>');
+}
+
+function paceCard(D, ctx, year, num, id, wide) {
   const cv = E.curves(D, ctx, year), labels = H.months(cv.startMi, cv.startMi + cv.N - 1).map(U.miLabel);
-  const tgt = E.targetLabel(D, year);
+  const tgt = E.targetLabel(D, year), series = [
+    { name: (year - 2) + ' sailings', color: 'var(--c8)', values: cv.y2.pct, dashed: '2 3', width: 1.5 },
+    { name: (year - 1) + ' sailings', color: 'var(--ink-2)', values: cv.stly.pct, dashed: '5 3', width: 1.6 },
+    { name: year + ' sailings', color: 'var(--c1)', values: cv.cy.pct, width: 2.4 }].filter(s => s.values.some(v => v != null));
   return H.card(id, num, year + ' booking pace', 'Cumulative booked revenue as a share of ' + tgt + ' · ' + H.shipName(D, ctx) +
     (cv.gap == null ? '' : ' · ' + U.pp(cv.gap) + ' vs the same point last year'),
-    H.body(C.lines({ labels, every: 3, width: 1120, height: 300, yFmt: C.axisPct, tipFmt: v => U.pct(v), markAt: cv.at, markLabel: 'as of',
-      series: [{ name: (year - 2) + ' sailings', color: 'var(--c8)', values: cv.y2.pct, dashed: '2 3', width: 1.5 },
-               { name: (year - 1) + ' sailings', color: 'var(--muted)', values: cv.stly.pct, dashed: '5 3', width: 1.6 },
-               { name: year + ' sailings', color: 'var(--c1)', values: cv.cy.pct, width: 2.4 }],
+    H.body(C.lines({ labels, every: wide ? 3 : 6, width: wide ? 1120 : 640, height: wide ? 310 : 250, yFmt: C.axisPct, tipFmt: v => U.pct(v), markAt: cv.at, markLabel: 'as of', series,
       label: year + ' booking curve against prior years' })) +
-    C.legend([{ name: year + ' sailings', color: 'var(--c1)' }, { name: (year - 1) + ', one year earlier', color: 'var(--muted)', dash: 1 }, { name: (year - 2) + ', two years earlier', color: 'var(--c8)', dash: 1 }]));
+    C.legend([{ name: year + ' sailings', color: 'var(--c1)' }, { name: (year - 1) + ', one year earlier', color: 'var(--ink-2)', dash: 1 }, { name: (year - 2) + ', two years earlier', color: 'var(--c8)', dash: 1 }]));
 }
 V.paceCard = paceCard;
 
-function watchTable(D, rows) {
+function watchTable(D, rows, sortId) {
   return H.table(
     [{ h: 'Voyage', l: 1 }, { h: 'Ship', l: 1 }, { h: 'Sails', l: 1 }, { h: 'Region', l: 1 }, { h: 'Days out' }, { h: 'Target' }, { h: 'Booked' }, { h: '% booked' },
-     { h: 'Curve says', tip: 'The share of the final book a typical voyage has secured this many days before sailing, from voyages that have already sailed.' },
-     { h: 'Pace' }, { h: 'To go' }, { h: 'Outlook' }],
-    rows.map(r => [r.v.code + (r.v.charter ? ' <span class="pill">charter</span>' : ''), D.dims.ships[r.v.ship].name, U.shortDate(r.v.sail) + ' · D' + r.v.days, D.dims.regions[r.v.region],
-      r.dts, U.money(r.target), U.money(r.tix), U.pct(r.pct, 0), U.pct(r.expected, 0), H.delta(r.pace, v => U.pp(v, 0), true, 0.005),
-      U.money(r.togo), H.delta(r.outlook - r.target, U.signedMoney, true, 500)]));
+     { h: 'Curve says', tip: 'The share of its final book a voyage in this region has normally secured this many days before sailing, from voyages that have already sailed.' },
+     { h: 'Outlook' }, { h: 'Shortfall', tip: 'Target less outlook: how far short of target this voyage is projected to finish. Flagged at 5% of target and $150k.' }],
+    rows.map(r => ({ cls: r.flagged ? 'flagrow' : '', cells: [r.v.code + (r.v.charter ? ' <span class="pill">charter</span>' : '') + (r.flagged ? ' <span class="pill warn">watch</span>' : ''),
+      D.dims.ships[r.v.ship].name, { v: U.shortDate(r.v.sail) + ' · D' + r.v.days, s: r.v.sail }, D.dims.regions[r.v.region],
+      r.dts, U.money(r.target), U.money(r.tix), U.pct(r.pct, 0), U.pct(r.expected, 0), U.money(r.outlook),
+      r.shortfall > 500 ? { v: U.money(r.shortfall), s: r.shortfall, cls: r.flagged ? 'unfav' : '' } : { v: r.shortfall < -500 ? U.money(-r.shortfall) + ' over' : '$0', s: r.shortfall, cls: r.shortfall < -500 ? 'fav' : '' }] })), '', sortId);
 }
 V.watchTable = watchTable;
 
-function narrative(D, ctx, ui) {
-  const br = E.bridge(D, ctx, ui.bridgeBase), rv = E.river(D, ctx), Hd = E.headline(D, ctx), [, b] = Hd.years;
+function story(D, ctx, ui) {
+  const base = V.bridgeBase(D, ctx, ui), br = E.bridge(D, ctx, base), rv = E.river(D, ctx);
   const names = { bud: 'budget', fc: 'forecast', stly: 'the prior year' };
   const comps = E.BRIDGE.map(s => ({ ...s, value: br.comps[s.key] })).filter(c => Math.abs(c.value) > 5e4).sort((x, y) => Math.abs(y.value) - Math.abs(x.value));
   const miss = br.gap < 0, same = comps.filter(c => (c.value < 0) === miss).slice(0, 3), against = comps.filter(c => (c.value < 0) !== miss).slice(0, 2);
   const fmtC = c => c.label.toLowerCase() + ' (<span class="' + (c.value >= 0 ? 'up' : 'dn') + '">' + U.signedMoney(c.value) + '</span>)';
-  const verb = br.W.forecast ? 'is tracking to' : 'closed at';
-  let what = '<p><b>Voyage profit ' + verb + ' ' + U.money(br.act.profit) + '</b> for ' + br.W.label + ' against ' + names[br.baseline] + ' of ' + U.money(br.base.profit) + ' — ' +
-    (Math.abs(br.gap) < 5e4 ? 'in line' : '<span class="' + (miss ? 'dn' : 'up') + '">' + U.signedMoney(br.gap) + '</span>') + '. ';
   const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+  let what = '<p><b>Voyage profit ' + (br.W.forecast ? 'is tracking to' : 'closed at') + ' ' + U.money(br.act.profit) + '</b> for ' + br.W.label + ', against ' + names[base] + ' of ' + U.money(br.base.profit) +
+    (Math.abs(br.gap) < 5e4 ? ' — in line.' : ': <span class="' + (miss ? 'dn' : 'up') + '">' + U.money(Math.abs(br.gap)) + (miss ? ' short' : ' ahead') + '</span>.') + ' ';
   if (same.length) what += cap(H.listOf(same.map(fmtC))) + ' drove the ' + (miss ? 'shortfall' : 'beat') + (against.length ? ', held back by ' + H.listOf(against.map(fmtC)) : '') + '.';
-  what += '</p><p>' + b.year + ' sailings are <b>' + U.pct(b.pct) + ' booked</b> against ' + b.label + ', <span class="' + (b.pct - b.lyPct >= 0 ? 'up' : 'dn') + '">' +
-    U.pp(b.pct - b.lyPct) + '</span> against the same point a year earlier. ' +
-    'The river moved <b>' + U.money(rv.moved) + '</b> of cash, of which ' + (rv.net >= 0 ? '<span class="up">' + U.money(rv.net) + ' reached reserves</span>' : '<span class="dn">' + U.money(-rv.net) + ' came out of reserves</span>') +
+  what += '</p><p>The river moved <b>' + U.money(rv.moved) + '</b> of cash, of which ' +
+    (rv.net >= 0 ? '<span class="up">' + U.money(rv.net) + ' reached reserves</span>' : '<span class="dn">' + U.money(-rv.net) + ' came out of reserves</span>') +
     '; <b>' + U.money(rv.held) + '</b> of guest deposits is held against voyages still to sail.</p>';
 
-  const watch = E.watchlist(D, ctx).filter(r => r.pace < -0.08 && !r.v.charter);
+  const watch = E.watchlist(D, ctx).filter(r => r.flagged);
   let decide;
   if (watch.length) {
-    const top = watch.slice(0, 3), togo = watch.reduce((s, r) => s + Math.max(0, r.togo), 0);
-    const byRegion = new Map();
-    for (const r of watch) byRegion.set(r.v.region, (byRegion.get(r.v.region) || 0) + 1);
-    const lead = [...byRegion.entries()].sort((x, y) => y[1] - x[1]).slice(0, 2);
-    const where = watch.length > 3 ? ' — concentrated in ' + H.listOf(lead.map(([r, k]) => D.dims.regions[r] + ' (' + k + ')')) : '';
-    decide = '<p><b>' + watch.length + ' voyage' + (watch.length > 1 ? 's' : '') + '</b> inside 400 days ' + (watch.length > 1 ? 'are' : 'is') + ' more than 8 points behind the booking curve, carrying <b>' +
-      U.money(togo) + '</b> of revenue to go' + where + '. The furthest behind: ' +
-      H.listOf(top.map(r => '<b>' + r.v.code + '</b> (' + D.dims.regions[r.v.region] + ', ' + U.pct(r.pct, 0) + ' booked ' + r.dts + ' days out)')) +
+    const total = watch.reduce((s, r) => s + r.shortfall, 0);
+    decide = '<p><b>' + watch.length + ' voyage' + (watch.length > 1 ? 's are' : ' is') + ' projected to finish at least 5% short of target</b>, ' + U.money(total) + ' in all. The largest: ' +
+      H.listOf(watch.slice(0, 3).map(r => '<b>' + r.v.code + '</b> (' + D.dims.regions[r.v.region] + ', ' + r.dts + ' days out, ' + U.money(r.shortfall) + ' short)')) +
       '. Decide whether to release promotional inventory on these sailings or hold price and accept the load factor.</p>';
   } else {
-    decide = '<p>No voyage inside 400 days is more than 8 points behind the booking curve. Hold price and let the curve run.</p>';
+    decide = '<p>No voyage in the next 400 days is projected to finish 5% or more short of target. Hold price and let the curve run.</p>';
   }
   const dil = comps.find(c => c.key === 'dil');
-  if (dil && dil.value < 0) decide += '<p>Dilution has cost <span class="dn">' + U.money(-dil.value) + '</span> against ' + names[br.baseline] + '. Decide which promotions are buying volume and which are discounting bookings that would have come anyway.</p>';
+  if (dil && dil.value < 0) decide += '<p>Dilution has cost <span class="dn">' + U.money(-dil.value) + '</span> against ' + names[base] + '. Decide which promotions are buying volume and which are discounting bookings that would have come anyway.</p>';
   const tag = V.scenTag(ctx);
   return H.card('story', '01', 'What happened', 'Written by the model from the figures on this page',
     '<div class="story"><div class="board-prose">' + what + '</div><h3>What to decide</h3><div class="board-prose">' + decide + '</div>' +
-    '<div class="regen">Regenerated from the model · ' + br.W.short + ' · ' + H.shipName(D, ctx) + (tag.length ? ' · ' + tag.join(' · ') : ' · no scenario adjustments') + '</div></div>');
+    '<div class="regen">Regenerated from the model · ' + br.W.short + ' · ' + H.shipName(D, ctx) +
+    (tag.length ? ' · ' + tag.join(' · ') + (br.W.forecast ? '' : ' (the cockpit moves unsailed voyages, so this closed window is unchanged)') : ' · no scenario adjustments') + '</div></div>');
 }
 
 V.render.flight = function (D, ctx, ui) {
-  const cy = U.miYear(U.mi(ctx.asOf));
-  const watch = E.watchlist(D, ctx, 8);
-  return kpis(D, ctx) +
-    '<div class="row two">' + narrative(D, ctx, ui) + bridgeCard(D, ctx, ui) + '</div>' +
+  const cy = U.miYear(U.mi(ctx.asOf)), next = Math.max(ctx.year, cy) + (ctx.year > cy ? 0 : 1);
+  const paceYear = D.voyages.some(v => v.year === next) ? next : ctx.year;
+  return hero(D, ctx, ui) + kpis(D, ctx) +
+    '<div class="row two">' + story(D, ctx, ui) + bridgeCard(D, ctx, ui) + '</div>' +
     riverCard(D, ctx, ui) +
-    '<div class="row two">' + cashMonthsCard(D, ctx, ui) + scenariosCard(D, ctx, ui) + '</div>' +
-    paceCard(D, ctx, cy + 1, '06', 'pace1') +
-    H.card('watch', '07', 'Voyage watchlist', 'Unsailed voyages furthest behind the booking curve · next 400 days',
-      watchTable(D, watch) + '<div class="foot-note">The full list is under <a href="#" data-act="view:togo">Revenue to-go</a>.</div>');
+    '<div class="row two">' + sinceCard(D, ctx) + scenariosCard(D, ctx, ui) + '</div>' +
+    '<div class="row two">' + cashMonthsCard(D, ctx, ui) + paceCard(D, ctx, paceYear, '07', 'pace1') + '</div>' +
+    H.card('watch', '08', 'Voyage watchlist', 'The five unsailed voyages projected to finish furthest short of target · next 400 days',
+      watchTable(D, E.watchlist(D, ctx, 5)) + '<div class="foot-note">The full, sortable list is under <a href="#" data-act="view:togo">Revenue to-go</a>.</div>');
 };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

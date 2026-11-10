@@ -53,12 +53,18 @@ const U = CBR.util = {
     else s = '$' + a.toFixed(0);
     return v < -0.5 ? '−' + s : s;
   },
-  signedMoney: v => (v >= 0 ? '+' : '−') + U.money(Math.abs(v)),
+  signedMoney: v => !isFinite(v) ? '—' : Math.abs(v) < 0.5 ? '$0' : (v > 0 ? '+' : '−') + U.money(Math.abs(v)),
   dollars: v => isFinite(v) ? (v < -0.5 ? '−' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-US') : '—',
   int: v => isFinite(v) ? Math.round(v).toLocaleString('en-US') : '—',
-  pct: (v, d) => isFinite(v) ? (v * 100).toFixed(d == null ? 1 : d) + '%' : '—',
-  signedPct: (v, d) => isFinite(v) ? (v >= 0 ? '+' : '−') + (Math.abs(v) * 100).toFixed(d == null ? 1 : d) + '%' : '—',
-  pp: (v, d) => isFinite(v) ? (v >= 0 ? '+' : '−') + (Math.abs(v) * 100).toFixed(d == null ? 1 : d) + ' pp' : '—',
+  // A value that rounds to zero carries no sign, so "−0.0%" never appears.
+  signed(v, d, unit, plus) {
+    if (!isFinite(v)) return '—';
+    const s = (Math.abs(v) * 100).toFixed(d == null ? 1 : d);
+    return (+s === 0 ? '' : v < 0 ? '−' : plus ? '+' : '') + s + unit;
+  },
+  pct: (v, d) => U.signed(v, d, '%', false),
+  signedPct: (v, d) => U.signed(v, d, '%', true),
+  pp: (v, d) => U.signed(v, d, ' pp', true),
   esc: s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
 };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

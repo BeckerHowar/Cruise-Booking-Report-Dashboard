@@ -56,7 +56,24 @@ every view recomputes.
   and proration are handled inconsistently from slide to slide in a deck. Here each is one switch
   applied to every view at once.
 - **Press Replay** to step the as-of date forward month by month and watch the book fill in.
-- **Open a card's Table view** to see the numbers behind any chart.
+- **Open a card's Table view** to see the numbers behind any chart, or **CSV** to download them.
+- **Sort and filter the voyage tables** by clicking a column heading or typing a ship, region or code.
+- **Copy link** captures the whole state — tab, date, ship, adjustments, scenario — in the address,
+  so a colleague opens exactly what you were looking at. **Print** lays the current tab out for paper.
+- **Switch theme.** Light is a soft paper grey rather than white; dark is one click away.
+
+## How far to trust the outlook
+
+The outlook projects every unsailed voyage to its finish. It starts from the voyage's target and moves
+it by how much booking pace at that distance from sailing has actually predicted the finish, fitted on
+voyages that have already sailed. Pace that history shows to be noise is given little weight.
+
+The Pace tab carries a standing backtest: the outlook projected from 12, 9, 6 and 3 months earlier,
+scored against what those voyages then delivered, beside the simplest forecast there is — assume every
+voyage lands on target. On the simulated book the outlook beats that benchmark voyage by voyage at all
+four horizons for the fleet, by a small margin, and does not for every single ship. The card shows
+whichever is true for the data on screen. The watchlist flags a voyage only when the outlook finishes
+at least 5% and $150k short of target.
 
 ## Data sources
 
@@ -91,6 +108,12 @@ Open `index.html` in a browser, or serve the folder:
 
 ```bash
 python -m http.server 5178
+```
+
+Run the known-answer check: a nine-booking book whose every figure was worked out by hand:
+
+```bash
+node tests/engine.js
 ```
 
 Run the headless check, which renders every tab under a spread of control settings:

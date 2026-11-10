@@ -24,64 +24,94 @@ const sumRows = (rows, from, to, lo) => {
 
 /* ============================== PACE ============================== */
 V.render.pace = function (D, ctx, ui) {
-  const y = ctx.year, cy = cyOf(ctx), am = U.mi(ctx.asOf), tgt = E.targetLabel(D, y);
+  const y = ctx.year, cy = cyOf(ctx), am = U.mi(ctx.asOf), tgt = E.targetLabel(D, y), lyMi = U.mi(ctx.asOf - 365);
   const P = E.position(D, ctx, ctx.asOf), Pfinal = E.position(D, ctx, D.meta.pull);
   const cur = E.rollup(D, ctx, P, { ...E.yearRange(y), key: keyQ });
   const ly = E.stly(D, ctx, y, keyQ, 1), ly2 = E.stly(D, ctx, y, keyQ, 2);
   const fin = k => y - k < cy ? E.rollup(D, ctx, Pfinal, { ...E.yearRange(y - k), key: keyQ }) : null;
   const f1 = fin(1), f2 = fin(2);
-  const tot = { tgt: 0, tix: 0, ly: 0, lyDen: 0, ly2: 0, ly2Den: 0 };
+  const tot = { tgt: 0, tix: 0, apcd: 0, ly: 0, lyDen: 0, lyApcd: 0, ly2: 0, ly2Den: 0, sailed: true };
   const curveRows = [];
   for (let q = 0; q < 4; q++) {
     const a = cur.get(q), b = ly.get(q), c = ly2.get(q);
     if (!a) continue;
     const lyDen = b ? (f1 && f1.get(q) ? f1.get(q).tix : b.tgt) : 0, ly2Den = c ? (f2 && f2.get(q) ? f2.get(q).tix : c.tgt) : 0;
-    tot.tgt += a.tgt; tot.tix += a.tix; tot.ly += b ? b.tix : 0; tot.lyDen += lyDen; tot.ly2 += c ? c.tix : 0; tot.ly2Den += ly2Den;
-    curveRows.push({ q: Q[q], tgt: a.tgt, tix: a.tix, ly: b ? b.tix : null, lyDen, ly2: c ? c.tix : null, ly2Den });
+    // A prior-year quarter that had finished sailing a year ago was already at 100%: there is no pace to compare.
+    const sailed = (y - 1) * 12 + q * 3 + 2 <= lyMi;
+    tot.tgt += a.tgt; tot.tix += a.tix; tot.apcd += a.apcd; tot.ly += b ? b.tix : 0; tot.lyDen += lyDen; tot.lyApcd += b ? b.apcd : 0;
+    tot.ly2 += c ? c.tix : 0; tot.ly2Den += ly2Den; tot.sailed = tot.sailed && sailed;
+    curveRows.push({ q: Q[q], tgt: a.tgt, tix: a.tix, apcd: a.apcd, ly: b ? b.tix : null, lyDen, lyApcd: b ? b.apcd : 0, ly2: c ? c.tix : null, ly2Den, sailed });
   }
-  curveRows.push({ q: 'FY' + y, tgt: tot.tgt, tix: tot.tix, ly: tot.ly, lyDen: tot.lyDen, ly2: tot.ly2, ly2Den: tot.ly2Den, sub: true });
+  curveRows.push({ q: 'FY' + y, ...tot, sub: true });
+  const perCap = (x, cap, z, zcap) => (cap && zcap && z) ? (x / cap) / (z / zcap) - 1 : null;
   const curveTable = H.table(
-    [{ h: 'Sailing period', l: 1 }, { h: tgt }, { h: 'Booked ITD' }, { h: '% booked' }, { h: 'STLY %', tip: 'Share secured by the prior year\'s sailings at the same calendar point a year earlier.' },
-     { h: 'Pace gap' }, { h: 'STLY booked' }, { h: 'YoY' }, { h: 'Y-2 %' }, { h: 'vs Y-2' }],
+    [{ h: 'Sailing period', l: 1 }, { h: tgt }, { h: 'Booked ITD' }, { h: '% booked' },
+     { h: 'STLY %', tip: 'Share secured by the prior year\'s sailings at the same calendar point a year earlier. Shown as "sailed" where that quarter had already finished sailing, since it was at 100% by definition.' },
+     { h: 'Pace gap' }, { h: 'STLY booked' }, { h: 'YoY' },
+     { h: 'Capacity YoY', tip: 'Change in available passenger cruise days. When the fleet grows, revenue grows with it — read YoY against this.' },
+     { h: 'Per APCD YoY', tip: 'Revenue per available passenger cruise day against a year earlier: the like-for-like comparison, with fleet growth taken out.' },
+     { h: 'Y-2 %' }, { h: 'vs Y-2' }],
     curveRows.map(r => {
-      const p = ratio(r.tix, r.tgt), lp = ratio(r.ly, r.lyDen), l2 = ratio(r.ly2, r.ly2Den);
-      return { cls: r.sub ? 'sub' : '', cells: [r.q, U.money(r.tgt), U.money(r.tix), U.pct(p), lp == null ? '—' : U.pct(lp),
-        (p == null || lp == null) ? '—' : H.delta(p - lp, U.pp, true, 0.0005), r.ly == null ? '—' : U.money(r.ly),
-        r.ly ? H.delta(r.tix / r.ly - 1, U.signedPct, true, 0.0005) : '—', l2 == null ? '—' : U.pct(l2), (p == null || l2 == null) ? '—' : H.delta(p - l2, U.pp, true, 0.0005)] };
+      const p = ratio(r.tix, r.tgt), lp = ratio(r.ly, r.lyDen), l2 = ratio(r.ly2, r.ly2Den), pc = perCap(r.tix, r.apcd, r.ly, r.lyApcd);
+      return { cls: r.sub ? 'sub' : '', cells: [r.q, U.money(r.tgt), U.money(r.tix), U.pct(p),
+        r.sailed ? { v: 'sailed', cls: 'quiet' } : lp == null ? '—' : U.pct(lp),
+        (r.sailed || p == null || lp == null) ? '—' : H.delta(p - lp, U.pp, true, 0.0005), r.ly == null ? '—' : U.money(r.ly),
+        r.ly ? H.delta(r.tix / r.ly - 1, U.signedPct, true, 0.0005) : '—',
+        r.lyApcd ? U.signedPct(r.apcd / r.lyApcd - 1) : '—', pc == null ? '—' : H.delta(pc, U.signedPct, true, 0.0005),
+        l2 == null ? '—' : U.pct(l2), (p == null || l2 == null) ? '—' : H.delta(p - l2, U.pp, true, 0.0005)] };
     }));
 
   const prod = E.production(D, ctx, ctx.asOf), months = H.months(am - 12, am).filter(m => m >= prod.lo);
   const wkey = ctx.flags.charterEx ? 'winX' : 'win';
   const wname = ['Same-year sailings', 'Next-year sailings', 'Two years out and beyond'];
-  const wser = wname.map((name, i) => ({ name, color: C.PAL[[0, 2, 4][i]], values: months.map(m => prod.rows[m - prod.lo][wkey][i]) }));
-  const winBody = ui.tables.window
+  const wser = wname.map((name, i) => ({ name, color: C.PAL[[0, 2, 5][i]], values: months.map(m => prod.rows[m - prod.lo][wkey][i]) }));
+  const winBody = H.showTable(ui, 'window')
     ? H.table([{ h: 'Booking month', l: 1 }].concat(wname.map(n => ({ h: n }))).concat([{ h: 'Bookings' }]),
         months.map((m, i) => { const t = wser.reduce((s, x) => s + x.values[i], 0); return [U.miLabel(m)].concat(wser.map(x => U.pct(ratio(x.values[i], t), 0))).concat([U.money(t)]); }))
-    : H.body(C.stack({ labels: months.map(U.miLabel), series: wser, pct: true, tipFmt: U.money, width: 1120, height: 280, every: 1, label: 'Booking window split' })) + C.legend(wser);
+    : H.body(C.stack({ labels: months.map(U.miLabel), series: wser, pct: true, tipFmt: U.money, width: 1120, height: 290, every: 1, label: 'Booking window split' })) + C.legend(wser);
 
-  const conRows = [];
-  for (const yy of [cy, cy + 1, cy + 2]) {
+  const conRows = [], nCols = 12;
+  for (const yy of [...new Set([y, cy, cy + 1, cy + 2])].sort()) {
     if (!D.voyages.some(v => v.year === yy)) continue;
     const a = E.rollup(D, ctx, P, { ...E.yearRange(yy), key: keyQ }), b = E.stly(D, ctx, yy, keyQ, 1);
-    conRows.push({ cls: 'grp', cells: [yy + ' sailings', '', '', '', '', '', '', '', '', ''] });
-    const T = { tix: 0, ly: 0, pcd: 0, lyPcd: 0, apcd: 0, lyApcd: 0 };
-    const line = (label, x, z, sub) => ({ cls: sub ? 'sub' : '', cells: [label, U.money(x.tix), U.money(z.tix), z.tix ? H.delta(x.tix / z.tix - 1, U.signedPct, true, 0.0005) : '—',
-      U.int(x.pcd), U.int(z.pcd), U.pct(ratio(x.pcd, x.apcd)), U.pct(ratio(z.pcd, z.apcd)), U.dollars(ratio(x.tix, x.pcd)), U.dollars(ratio(z.tix, z.pcd))] });
+    conRows.push({ cls: 'grp', cells: [yy + ' sailings'].concat(new Array(nCols - 1).fill('')) });
+    const T = { tix: 0, pcd: 0, apcd: 0 }, L = { tix: 0, pcd: 0, apcd: 0 };
+    const line = (label, x, z, sub) => { const pc = perCap(x.tix, x.apcd, z.tix, z.apcd); return { cls: sub ? 'sub' : '', cells: [label, U.money(x.tix), U.money(z.tix),
+      z.tix ? H.delta(x.tix / z.tix - 1, U.signedPct, true, 0.0005) : '—', z.apcd ? U.signedPct(x.apcd / z.apcd - 1) : '—', pc == null ? '—' : H.delta(pc, U.signedPct, true, 0.0005),
+      U.int(x.pcd), U.int(z.pcd), U.pct(ratio(x.pcd, x.apcd)), U.pct(ratio(z.pcd, z.apcd)), U.dollars(ratio(x.tix, x.pcd)), U.dollars(ratio(z.tix, z.pcd))] }; };
     for (let q = 0; q < 4; q++) {
       const x = a.get(q), z = b.get(q) || { tix: 0, pcd: 0, apcd: 0 };
       if (!x) continue;
-      T.tix += x.tix; T.ly += z.tix; T.pcd += x.pcd; T.lyPcd += z.pcd; T.apcd += x.apcd; T.lyApcd += z.apcd;
+      for (const k of ['tix', 'pcd', 'apcd']) { T[k] += x[k]; L[k] += z[k]; }
       conRows.push(line(Q[q] + ' ' + yy, x, z));
     }
-    conRows.push(line('FY' + yy, { tix: T.tix, pcd: T.pcd, apcd: T.apcd }, { tix: T.ly, pcd: T.lyPcd, apcd: T.lyApcd }, true));
+    conRows.push(line('FY' + yy, T, L, true));
   }
 
-  return V.paceCard(D, ctx, y, '01', 'pace') +
+  const bt = E.backtest(D, ctx), fit = E.curve(D, ctx.asOf);
+  const btBody = bt.length ? H.table(
+    [{ h: 'Projected from', l: 1 }, { h: 'Voyages since sailed' }, { h: 'Booked then' }, { h: 'Outlook then' }, { h: 'Actual' },
+     { h: 'Outlook error', tip: 'Outlook less actual, across all the voyages together.' }, { h: 'Target error', tip: 'The same test for the simplest forecast there is: assume every voyage finishes on its target.' },
+     { h: 'Typical miss per voyage: outlook', tip: 'Sum of the absolute miss on each voyage, as a share of actual revenue. Unlike the total, misses in opposite directions do not cancel.' },
+     { h: 'Typical miss per voyage: target' }],
+    bt.map(r => [U.dateLabel(r.asOf) + ' · ' + r.back + ' months back', r.n, U.money(r.booked), U.money(r.outlook), U.money(r.actual), U.signedPct(r.outlook / r.actual - 1), U.signedPct(r.target / r.actual - 1),
+      { v: U.pct(r.absOut / r.actual), cls: r.absOut <= r.absTgt ? 'fav' : 'unfav' }, U.pct(r.absTgt / r.actual)]))
+    : '<div class="pad policy"><p>There is not enough sailed history before this close to test the outlook.</p></div>';
+  const better = bt.filter(r => r.absOut <= r.absTgt).length;
+
+  return V.paceCard(D, ctx, y, '01', 'pace', true) +
     H.card('curvet', '02', 'Booking curve table', y + ' sailings by quarter against ' + tgt + ' and the two prior years · ' + H.shipName(D, ctx), curveTable +
-      '<div class="foot-note">A completed prior year is measured against the revenue it finally delivered; an open one against its target.</div>') +
+      '<div class="foot-note">A completed prior year is measured against the revenue it finally delivered; an open one against its target. Read YoY beside Capacity YoY: when the fleet grows, Per APCD YoY is the like-for-like figure.</div>') +
     H.card('window', '03', 'Booking window split', 'Share of each month\'s bookings by how far ahead the voyage sails' + (ctx.flags.charterEx ? ' · charters excluded' : ' · charters included'), winBody, H.tableBtn('window', ui)) +
-    H.card('consol', '04', 'Consolidated booking report', 'Current year against the same time last year, by sailing quarter · ' + H.shipName(D, ctx),
-      H.table([{ h: 'Sailing period', l: 1 }, { h: 'Booked' }, { h: 'STLY' }, { h: 'Change' }, { h: 'PCDs' }, { h: 'STLY PCDs' }, { h: 'LF' }, { h: 'STLY LF' }, { h: 'GPD' }, { h: 'STLY GPD' }], conRows));
+    H.card('consol', '04', 'Consolidated booking report', 'Each sailing year against the same time last year, by sailing quarter · ' + H.shipName(D, ctx),
+      H.table([{ h: 'Sailing period', l: 1 }, { h: 'Booked' }, { h: 'STLY' }, { h: 'Change' }, { h: 'Capacity' , tip: 'Change in available passenger cruise days against a year earlier.' },
+               { h: 'Per APCD', tip: 'Change in revenue per available passenger cruise day: the like-for-like comparison.' },
+               { h: 'PCDs' }, { h: 'STLY PCDs' }, { h: 'LF' }, { h: 'STLY LF' }, { h: 'GPD' }, { h: 'STLY GPD' }], conRows)) +
+    H.card('accuracy', '05', 'How good is the outlook?', 'The outlook projected from earlier closes, scored against what those voyages then delivered · ' + H.shipName(D, ctx),
+      btBody + '<div class="foot-note">' + (bt.length ? 'Voyage by voyage, the outlook beat "assume the target" at ' + better + ' of ' + bt.length + ' horizons. ' : '') +
+      'The outlook starts from each voyage\'s target and moves it by how much pace at that distance from sailing has actually predicted the finish' +
+      (fit.fitted ? ', fitted on ' + U.int(fit.fitted) + ' voyage observations sailed before this close' : '; there is too little sailed history to fit that yet, so pace is trusted only as the book fills') +
+      '. Each test uses only what was known at its own date.</div>');
 };
 
 /* ========================== REVENUE TO-GO ========================== */
@@ -104,8 +134,8 @@ V.render.togo = function (D, ctx, ui) {
   return H.card('matrix', '01', y + ' revenue to-go by ship and quarter', tgt + ' less booked to date · darker cells are further along',
       H.table([{ h: 'Ship', l: 1 }, { h: 'Q1' }, { h: 'Q2' }, { h: 'Q3' }, { h: 'Q4' }, { h: 'FY' + y }], rows, 'matrix')) +
     H.card('region', '02', y + ' revenue to-go by region', 'Bar length is the target; the fill is what is booked · ' + H.shipName(D, ctx), '<div class="pad">' + (bars || 'No targets in this scope.') + '</div>') +
-    H.card('watchall', '03', 'Voyage watchlist', 'Every unsailed voyage in the next 400 days, furthest behind the booking curve first · ' + H.shipName(D, ctx),
-      V.watchTable(D, E.watchlist(D, ctx)));
+    H.card('watchall', '03', 'Voyage watchlist', 'Every unsailed voyage in the next 400 days, largest projected shortfall first · click a column heading to sort · ' + H.shipName(D, ctx),
+      V.watchTable(D, E.watchlist(D, ctx), 'watch'));
 };
 
 /* ============================= CHANNELS ============================= */
@@ -137,7 +167,7 @@ V.render.channels = function (D, ctx, ui) {
 /* ============================== SUITES ============================== */
 V.render.suites = function (D, ctx, ui) {
   const tm = E.tierMix(D, ctx), dm = D.dims, tiers = dm.tiers;
-  const ser = k => tiers.map((name, t) => ({ name, color: C.PAL[[4, 0, 5][t]], values: tm.map(c => c[k][t]) }));
+  const ser = k => tiers.map((name, t) => ({ name, color: C.PAL[[3, 0, 5][t]], values: tm.map(c => c[k][t]) }));
   const grp = label => ({ cls: 'grp', cells: [label].concat(tm.map(() => '')) });
   const rows = [grp('Revenue share')].concat(tiers.map((n, t) => [n].concat(tm.map(c => U.pct(ratio(c.rev[t], c.revTot))))))
     .concat([grp('Suites share')]).concat(tiers.map((n, t) => [n].concat(tm.map(c => U.pct(ratio(c.suites[t], c.suitesTot))))))
@@ -161,7 +191,7 @@ V.render.guests = function (D, ctx, ui) {
   const g = E.guests(D, ctx, ctx.year), am = U.mi(ctx.asOf), dm = D.dims, prod = E.production(D, ctx, ctx.asOf);
   const months = H.months(am - 12, am).filter(m => m >= g.lo), ix = m => m - g.lo;
   const shipSer = dm.ships.map((s, i) => ({ name: s.name, color: C.PAL[i % 8], values: months.map(m => g.byShip[i][ix(m)]) })).filter((s, i) => ctx.ship < 0 || ctx.ship === i);
-  const repLine = { name: 'Repeat guests', color: 'var(--c5)', fmt: v => U.pct(v, 0), values: months.map(m => ratio(g.rep[ix(m)], g.sailed[ix(m)])) };
+  const repLine = { name: 'Repeat guests', color: 'var(--c2)', fmt: v => U.pct(v, 0), values: months.map(m => ratio(g.rep[ix(m)], g.sailed[ix(m)])) };
   const bk = months.map(m => prod.rows[m - prod.lo]);
   const fvc = months.map(m => ratio(g.fvc[ix(m)], g.sailed[ix(m)]));
   const rs = g.repeatShip.map((r, i) => ({ ...r, name: dm.ships[i].name })).filter((r, i) => ctx.ship < 0 || ctx.ship === i);
@@ -176,11 +206,11 @@ V.render.guests = function (D, ctx, ui) {
   return '<div class="row two">' +
     H.card('gsail', '01', 'Guests sailed', 'Revenue guests by sailing month, with the repeat-guest share · ' + H.shipName(D, ctx),
       H.body(C.stack({ labels: months.map(U.miLabel), series: shipSer, yFmt: U.int, tipFmt: U.int, line: repLine, label: 'Guests sailed by month' })) +
-      C.legend(shipSer.concat([{ name: 'Repeat guests, % (right axis)', color: 'var(--c5)' }]))) +
+      C.legend(shipSer.concat([{ name: 'Repeat guests, % (right axis)', color: 'var(--c2)' }]))) +
     H.card('gbook', '02', 'Guests booking', 'Distinct bookers by booking month, with the share of bookings from repeat guests',
       H.body(C.stack({ labels: months.map(U.miLabel), series: [{ name: 'Distinct bookers', color: 'var(--c1)', values: bk.map(r => r.nBookers) }], yFmt: U.int, tipFmt: U.int,
-        line: { name: 'Repeat share of bookings', color: 'var(--c5)', fmt: v => U.pct(v, 0), values: bk.map(r => ratio(r.rep, r.count)) }, label: 'Bookers by month' })) +
-      C.legend([{ name: 'Distinct bookers', color: 'var(--c1)' }, { name: 'Repeat share, % (right axis)', color: 'var(--c5)' }])) +
+        line: { name: 'Repeat share of bookings', color: 'var(--c2)', fmt: v => U.pct(v, 0), values: bk.map(r => ratio(r.rep, r.count)) }, label: 'Bookers by month' })) +
+      C.legend([{ name: 'Distinct bookers', color: 'var(--c1)' }, { name: 'Repeat share, % (right axis)', color: 'var(--c2)' }])) +
     '</div><div class="row two">' +
     H.card('gfvc', '03', 'Future-voyage conversion', 'Guests booking their next voyage on board or within 14 days of sailing, as a share of guests sailed that month',
       H.body(C.lines({ labels: months.map(U.miLabel), yFmt: v => U.pct(v, 0), tipFmt: v => U.pct(v), every: 2,
@@ -239,18 +269,21 @@ V.render.voyages = function (D, ctx, ui) {
   let rows = E.voyageTable(D, ctx, y);
   if (ui.voyQ !== 'all') rows = rows.filter(r => U.miQuarter(r.v.smi) === +ui.voyQ);
   const d = (a, b, fmt, eps) => (a == null || b == null) ? '—' : H.delta(a - b, fmt, true, eps);
+  const signedDollars = v => (v >= 0 ? '+' : '−') + U.dollars(Math.abs(v));
   const body = H.table(
-    [{ h: 'Voyage', l: 1 }, { h: 'Sails', l: 1 }, { h: 'Region', l: 1 }, { h: 'LF' }, { h: 'vs FCST' }, { h: 'vs BDGT' }, { h: 'GPD' }, { h: 'vs FCST' }, { h: 'vs BDGT' },
-     { h: 'Revenue' }, { h: 'vs FCST' }, { h: 'vs BDGT' }, { h: '3 months ago', tip: 'Booked revenue on this voyage as the book stood 91 days before the as-of date.' }, { h: 'Pickup' }],
+    [{ h: 'Voyage', l: 1 }, { h: 'Sails', l: 1 }, { h: 'Region', l: 1 }, { h: 'LF' }, { h: 'LF vs FCST' }, { h: 'LF vs BDGT' }, { h: 'GPD' }, { h: 'GPD vs FCST' }, { h: 'GPD vs BDGT' },
+     { h: 'Revenue' }, { h: 'Rev vs FCST' }, { h: 'Rev vs BDGT' }, { h: '3 months ago', tip: 'Booked revenue on this voyage as the book stood 91 days before the as-of date.' }, { h: 'Pickup', tip: 'Revenue added in the last 91 days.' }],
     rows.map(r => ({ cls: r.v.nonRev ? 'memo' : '', cells: [
       r.v.code + (r.v.charter ? ' <span class="pill">charter</span>' : '') + (r.v.nonRev ? ' <span class="pill">non-revenue</span>' : '') + (r.sailed ? '' : ' <span class="pill open">open</span>'),
-      U.shortDate(r.v.sail) + ' · D' + r.v.days + (ctx.ship < 0 ? ' · ' + dm.ships[r.v.ship].name : ''), dm.regions[r.v.region],
-      r.lf == null ? '—' : U.pct(r.lf), d(r.lf, r.lfFc, U.pp, 0.0005), d(r.lf, r.lfBud, U.pp, 0.0005),
-      r.gpd == null ? '—' : U.dollars(r.gpd), d(r.gpd, r.gpdFc, v => (v >= 0 ? '+' : '−') + U.dollars(Math.abs(v)), 0.5), d(r.gpd, r.gpdBud, v => (v >= 0 ? '+' : '−') + U.dollars(Math.abs(v)), 0.5),
-      U.money(r.tix), d(r.tix, r.revFc, U.signedMoney, 500), d(r.tix, r.revBud, U.signedMoney, 500), U.money(r.prev3), H.delta(r.tix - r.prev3, U.signedMoney, true, 500)] })), 'voy');
+      { v: U.shortDate(r.v.sail) + ' · D' + r.v.days + (ctx.ship < 0 ? ' · ' + dm.ships[r.v.ship].name : ''), s: r.v.sail }, dm.regions[r.v.region],
+      r.lf == null ? '—' : { v: U.pct(r.lf), s: r.lf }, d(r.lf, r.lfFc, U.pp, 0.0005), d(r.lf, r.lfBud, U.pp, 0.0005),
+      r.gpd == null ? '—' : { v: U.dollars(r.gpd), s: r.gpd }, d(r.gpd, r.gpdFc, signedDollars, 0.5), d(r.gpd, r.gpdBud, signedDollars, 0.5),
+      { v: U.money(r.tix), s: r.tix }, d(r.tix, r.revFc, U.signedMoney, 500), d(r.tix, r.revBud, U.signedMoney, 500), { v: U.money(r.prev3), s: r.prev3 },
+      H.delta(r.tix - r.prev3, U.signedMoney, true, 500)] })), 'voy', 'voy');
   return H.card('voy', '01', y + ' voyages against forecast, budget and three months ago', rows.length + ' voyages · ' + H.shipName(D, ctx) +
-      ' · open voyages show the book to date, so their gaps to target are revenue still to come',
-    body, H.tabs('voyq', [['all', 'All']].concat(Q.map((q, i) => [i, q])), ui.voyQ, 'Sailing quarter'));
+      ' · click a column heading to sort · open voyages show the book to date, so their gaps to target are revenue still to come',
+    body, '<input type="search" class="filter" data-filter="voy" placeholder="Filter by voyage, ship or region" aria-label="Filter voyages" value="' + U.esc(ui.filter.voy || '') + '">' +
+    H.tabs('voyq', [['all', 'All']].concat(Q.map((q, i) => [i, q])), ui.voyQ, 'Sailing quarter'));
 };
 
 /* ========================== REVENUE TABLES ========================== */

@@ -29,14 +29,16 @@ E.defaults = () => ({
   window: 'fy', ship: -1,
 });
 
-const fkey = ctx => { const f = ctx.flags; return [f.barter, f.c2cNorm, f.revOnly, f.apcdNet].map(x => x ? 1 : 0).join('') + '|' + ctx.ship; };
+const pkey = ctx => { const f = ctx.flags; return [f.barter, f.c2cNorm, f.revOnly, f.apcdNet].map(x => x ? 1 : 0).join(''); };
+const fkey = ctx => pkey(ctx) + '|' + ctx.ship;
 const skey = ctx => { const s = ctx.scen, t = ctx.terms; return [s.vol, s.price, s.cancel, s.dil, s.fuel, t.deposit, t.finalDays, t.comm].join(','); };
 
 function memo(D, key, fn) {
-  if (D._cache.has(key)) return D._cache.get(key);
-  if (D._cache.size > 80) D._cache.clear();
+  const c = D._cache;
+  if (c.has(key)) return c.get(key);
+  while (c.size > 240) c.delete(c.keys().next().value);        // drop the oldest entry, keep the rest warm
   const v = fn();
-  D._cache.set(key, v);
+  c.set(key, v);
   return v;
 }
 
@@ -99,27 +101,32 @@ E.prepare = function (D) {
     for (const [m, d] of v.mdays) D.shipDays[v.ship][m - minMi] += d;
   }
   D._cache = new Map();
-  D.curve = buildCurves(D);
   return D;
 };
 
-// From voyages that have already sailed: how much of the final book is on the
+// From voyages that had sailed by `asOf`: how much of the final book is on the
 // books N days out, and how much of the eventual cancellation is still to come.
 // Regions book on very different lead times, so each gets its own curve once it
-// has enough history; thin regions fall back to the fleet curve.
-function buildCurves(D) {
-  const K = 81, nR = D.dims.regions.length;
+// has enough history; thin regions fall back to the fleet curve. Only history up
+// to `asOf` is used, so replaying an earlier close never borrows from its future.
+function buildCurves(D, asOf) {
+  const K = 81, V = D.voyages, nR = D.dims.regions.length;
   const mk = () => ({ book: f64(K), can: f64(K), fee: f64(K), gross: 0 });
   const all = mk(), byR = Array.from({ length: nR }, mk);
+  const lead = new Map(), finalPcd = f64(V.length);
   for (const b of D.bookings) {
-    const v = D.voyages[b.v];
-    if (v.sail > D.meta.pull || v.charter || v.nonRev || b.barter || b.nr) continue;
+    const v = V[b.v];
+    if (v.sail > asOf || v.charter || v.nonRev || b.barter || b.nr) continue;
     const r = b.list - b.pAmt - b.dAmt, kb = Math.min(K - 1, Math.max(0, Math.floor((v.sail - b.bd) / 10)));
     const kc = b.cd ? Math.min(K - 1, Math.max(0, Math.floor((v.sail - b.cd) / 10))) : -1;
     for (const h of [all, byR[v.region]]) {
       h.book[kb] += r; h.gross += r;
       if (kc >= 0) { h.can[kc] += r; h.fee[kc] += b.fee; }
     }
+    let L = lead.get(b.v);
+    if (!L) lead.set(b.v, L = f64(K));
+    L[kb] += b.g * v.days;
+    if (!b.cd) finalPcd[b.v] += b.g * v.days;
   }
   const finish = h => {
     const cumBook = f64(K), canAfter = f64(K), feeAfter = f64(K), canTot = U.sum(h.can);
@@ -135,15 +142,48 @@ function buildCurves(D) {
   };
   const fleet = finish(all);
   fleet.byRegion = byR.map(h => h.gross > all.gross * 0.02 ? finish(h) : fleet);
+
+  // How much a voyage's pace N days out has actually said about where it finished.
+  // For each lead-time bucket: finish / target - 1 = alpha + beta * (pace - 1), fitted
+  // on the voyages that have sailed. Pace that proved to be noise earns a small beta,
+  // and the projection then stays close to target instead of chasing it.
+  const sx = f64(K), sy = f64(K), sxx = f64(K), sxy = f64(K), cnt = f64(K);
+  for (const [vi, L] of lead) {
+    const v = V[vi], T = v.tgt;
+    if (!T || !(T.pcdGross > 0)) continue;
+    const tp = sum3(T.pcd);
+    if (!tp) continue;
+    const C = fleet.byRegion[v.region], y = finalPcd[vi] / tp - 1;
+    let cum = 0;
+    for (let k = K - 1; k >= 1; k--) {
+      cum += L[k];
+      const x = U.clamp(cum / (Math.max(0.02, C.cumBook[k]) * T.pcdGross), 0.4, 1.8) - 1;
+      sx[k] += x; sy[k] += y; sxx[k] += x * x; sxy[k] += x * y; cnt[k]++;
+    }
+  }
+  fleet.alpha = f64(K); fleet.beta = f64(K); fleet.fitted = 0;
+  for (let k = 1; k < K; k++) {
+    let n = 0, a = 0, b = 0, aa = 0, ab = 0;
+    for (let j = Math.max(1, k - 2); j <= Math.min(K - 1, k + 2); j++) { n += cnt[j]; a += sx[j]; b += sy[j]; aa += sxx[j]; ab += sxy[j]; }
+    if (n >= 60) {
+      const vx = aa - a * a / n;
+      fleet.beta[k] = vx > 1e-9 ? U.clamp((ab - a * b / n) / vx, 0, 1.2) : 0;
+      fleet.alpha[k] = U.clamp(b / n - fleet.beta[k] * a / n, -0.2, 0.2);
+      fleet.fitted = Math.max(fleet.fitted, n);
+    } else {
+      fleet.beta[k] = Math.min(1, 2 * fleet.cumBook[k]);      // too little history: trust pace only as the book fills
+    }
+  }
   return fleet;
 }
-E.curveOf = (D, v) => D.curve.byRegion[v.region] || D.curve;
+E.curve = (D, asOf) => memo(D, 'crv|' + asOf, () => buildCurves(D, asOf));
+E.curveOf = (D, v, asOf) => E.curve(D, asOf).byRegion[v.region];
 
 /* ---------------------------------------------------------------------
    POSITION. The book as it stood at day t, by voyage.
    --------------------------------------------------------------------- */
 E.position = function (D, ctx, t) {
-  return memo(D, 'pos|' + t + '|' + fkey(ctx), () => {
+  return memo(D, 'pos|' + t + '|' + pkey(ctx), () => {
     const V = D.voyages, n = V.length, R = reader(ctx);
     const tri = () => [f64(n), f64(n), f64(n)];
     const P = { rev: f64(n), list: f64(n), dil: f64(n), fee: f64(n), pcd: f64(n), pcdGross: f64(n), guests: f64(n),
@@ -290,7 +330,7 @@ E.curves = function (D, ctx, year) {
    --------------------------------------------------------------------- */
 E.outlook = function (D, ctx) {
   return memo(D, 'out|' + ctx.asOf + '|' + fkey(ctx) + '|' + skey(ctx), () => {
-    const P = E.position(D, ctx, ctx.asOf), S = ctx.scen, V = D.voyages, n = V.length;
+    const P = E.position(D, ctx, ctx.asOf), S = ctx.scen, V = D.voyages, n = V.length, F = E.curve(D, ctx.asOf);
     const tri = () => [f64(n), f64(n), f64(n)];
     const O = { pcd: f64(n), list: f64(n), dil: f64(n), fee: f64(n), tradeRev: f64(n), rev: f64(n), tix: f64(n),
                 pcdT: tri(), listT: tri(), pickRev: f64(n), cRem: f64(n), feeRate: f64(n) };
@@ -299,17 +339,22 @@ E.outlook = function (D, ctx) {
       O.pcd[i] = P.pcd[i]; O.list[i] = P.list[i]; O.dil[i] = P.dil[i]; O.fee[i] = P.fee[i]; O.tradeRev[i] = P.tradeRev[i];
       for (let t = 0; t < 3; t++) { O.pcdT[t][i] = P.pcdT[t][i]; O.listT[t][i] = P.listT[t][i]; }
       if (v.sail > ctx.asOf && !v.nonRev) {
-        const C = E.curveOf(D, v), k = Math.min(80, Math.floor((v.sail - ctx.asOf) / 10));
+        const C = F.byRegion[v.region], k = Math.min(80, Math.floor((v.sail - ctx.asOf) / 10));
         const share = Math.max(0.02, C.cumBook[k]), T = v.tgt;
-        const tgtGross = T ? T.pcdGross : P.pcdGross[i] / share;
-        // Pace against the curve counts for little while only a sliver of the book exists.
-        const rawPace = tgtGross > 0 ? U.clamp(P.pcdGross[i] / (share * tgtGross), 0.5, 1.6) : 1;
-        const pace = 1 + (rawPace - 1) * Math.min(1, share * 2);
-        const cAll = U.clamp(C.baseCancel * (1 + S.cancel), 0, 0.6);
-        const cRem = cAll * C.canAfter[k] / Math.max(0.05, 1 - cAll * (1 - C.canAfter[k]));
-        const cPick = cAll * C.canAfter[k >> 1];
-        const keep = 1 - cRem;
-        let pick = v.charter ? 0 : (1 - share) * tgtGross * Math.sqrt(pace) * (1 + S.vol) * (1 - cPick);
+        const cancelAt = mult => {
+          const cAll = U.clamp(C.baseCancel * mult, 0, 0.6);
+          return { rem: cAll * C.canAfter[k] / Math.max(0.05, 1 - cAll * (1 - C.canAfter[k])), pick: cAll * C.canAfter[k >> 1] };
+        };
+        const c0 = cancelAt(1), cS = cancelAt(1 + S.cancel), cRem = cS.rem, cPick = cS.pick, keep = 1 - cRem;
+        // Where the voyage finishes: its target, corrected by how voyages at this pace
+        // and this distance from sailing have finished before.
+        let finish;
+        if (T && T.pcdGross > 0) {
+          const pace = U.clamp(P.pcdGross[i] / (share * T.pcdGross), 0.4, 1.8);
+          finish = sum3(T.pcd) * (1 + F.alpha[k] + F.beta[k] * (pace - 1));
+        } else finish = P.pcd[i] * (1 - c0.rem) / Math.max(share, 0.05);
+        // The scenario scales the pickup and re-rates cancellations; the base case is the fitted finish.
+        let pick = v.charter ? 0 : Math.max(0, finish - P.pcd[i] * (1 - c0.rem)) * (1 + S.vol) * (1 - cPick) / (1 - c0.pick);
         pick = Math.max(0, Math.min(pick, v.apcdFull * 0.985 - P.pcd[i] * keep));
 
         // Pickup lands in the inventory that is still open, at that tier's fare.
@@ -624,18 +669,21 @@ E.stly = function (D, ctx, year, key, yearsBack) {
   return E.rollup(D, ctx, P, { ...R, key });
 };
 
+// Unsailed voyages in the next 400 days, largest projected shortfall against target first.
+// A voyage is flagged when the outlook finishes at least 5% and $150k short.
 E.watchlist = function (D, ctx, limit) {
   const P = E.position(D, ctx, ctx.asOf), O = E.outlook(D, ctx), rows = [];
   for (const v of D.voyages) {
     if (v.sail <= ctx.asOf || v.nonRev || !v.tgt || (ctx.ship >= 0 && v.ship !== ctx.ship)) continue;
     const dts = v.sail - ctx.asOf;
     if (dts > 400) continue;
-    const tix = P.rev[v.i] + P.fee[v.i], expected = E.curveOf(D, v).cumBook[Math.min(80, Math.floor(dts / 10))];
-    const pct = v.tgtRev ? tix / v.tgtRev : 0;
+    const tix = P.rev[v.i] + P.fee[v.i], expected = E.curveOf(D, v, ctx.asOf).cumBook[Math.min(80, Math.floor(dts / 10))];
+    const pct = v.tgtRev ? tix / v.tgtRev : 0, shortfall = v.tgtRev - O.tix[v.i];
     rows.push({ v, dts, tix, target: v.tgtRev, togo: v.tgtRev - tix, pct, expected, pace: pct - expected,
-                lf: v.apcdFull ? P.pcd[v.i] / v.apcdFull : 0, outlook: O.tix[v.i] });
+                lf: v.apcdFull ? P.pcd[v.i] / v.apcdFull : 0, outlook: O.tix[v.i], shortfall,
+                flagged: !v.charter && shortfall > Math.max(150e3, 0.05 * v.tgtRev) });
   }
-  rows.sort((a, b) => a.pace - b.pace);
+  rows.sort((a, b) => b.shortfall - a.shortfall);
   return limit ? rows.slice(0, limit) : rows;
 };
 
@@ -755,8 +803,55 @@ E.headline = function (D, ctx) {
   };
   const prod = E.production(D, ctx, ctx.asOf), row = m => prod.rows[m - prod.lo] || { book: 0, can: 0, fee: 0 };
   const net = r => r.book - r.can + r.fee;
-  return { cy, years: [yr(cy), yr(cy + 1), yr(cy + 2)], netMonth: net(row(am)), netPrev: net(row(am - 1)), netLy: net(row(am - 12)),
+  const has = y => D.voyages.some(v => v.year === y);
+  return { cy, years: [ctx.year, ctx.year + 1].filter(has).map(yr), netMonth: net(row(am)), netPrev: net(row(am - 1)), netLy: net(row(am - 12)),
            held: E.cash(D, ctx).held };
+};
+
+// True when most voyages sailing in the bridge and river window carry a forecast.
+E.hasForecast = function (D, ctx) {
+  const W = E.windowMonths(D, ctx);
+  let n = 0, fc = 0;
+  for (const v of D.voyages) {
+    if (v.smi < W.from || v.smi > W.to || !v.bud || (ctx.ship >= 0 && v.ship !== ctx.ship)) continue;
+    n++; if (v.fc) fc++;
+  }
+  return n > 0 && fc * 2 >= n;
+};
+
+// What moved between the previous month-end and this one.
+E.monthChange = function (D, ctx) {
+  const prev = U.miEnd(U.mi(ctx.asOf) - 1), cP = { ...ctx, asOf: prev };
+  const Pn = E.position(D, ctx, ctx.asOf), Pp = E.position(D, ctx, prev), movers = [];
+  for (const v of D.voyages) {
+    if (v.nonRev || v.sail <= prev || (ctx.ship >= 0 && v.ship !== ctx.ship)) continue;
+    const delta = (Pn.rev[v.i] + Pn.fee[v.i]) - (Pp.rev[v.i] + Pp.fee[v.i]);
+    if (Math.abs(delta) > 1) movers.push({ v, delta, tix: Pn.rev[v.i] + Pn.fee[v.i] });
+  }
+  movers.sort((a, b) => b.delta - a.delta);
+  return { prev, now: E.headline(D, ctx), was: E.headline(D, cP), up: movers.slice(0, 5),
+           down: movers.filter(m => m.delta < 0).slice(-3).reverse() };
+};
+
+// How the outlook would have done: project from earlier closes and score against what then sailed.
+E.backtest = function (D, ctx) {
+  return memo(D, 'bt|' + ctx.asOf + '|' + fkey(ctx), () => {
+    const zero = { vol: 0, price: 0, cancel: 0, dil: 0, fuel: 0 }, Pn = E.position(D, ctx, ctx.asOf), rows = [];
+    for (const back of [12, 9, 6, 3]) {
+      const a = U.miEnd(U.mi(ctx.asOf) - back), c = { ...ctx, asOf: a, scen: zero };
+      if (U.mi(a) <= D.range.minMi) continue;
+      const O = E.outlook(D, c), Pt = E.position(D, c, a);
+      const r = { back, asOf: a, n: 0, booked: 0, outlook: 0, actual: 0, target: 0, absOut: 0, absTgt: 0 };
+      for (const v of D.voyages) {
+        if (v.sail <= a || v.sail > ctx.asOf || v.nonRev || !v.tgt || (ctx.ship >= 0 && v.ship !== ctx.ship)) continue;
+        const act = Pn.rev[v.i] + Pn.fee[v.i];
+        r.n++; r.booked += Pt.rev[v.i] + Pt.fee[v.i]; r.outlook += O.tix[v.i]; r.actual += act; r.target += v.tgtRev;
+        r.absOut += Math.abs(O.tix[v.i] - act); r.absTgt += Math.abs(v.tgtRev - act);
+      }
+      if (r.n) rows.push(r);
+    }
+    return rows;
+  });
 };
 
 E.checks = function (D, ctx) {

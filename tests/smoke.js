@@ -10,7 +10,7 @@ const { util: U, engine: E, views: V, sigma: S } = globalThis.CBR;
 
 const D = E.prepare(CBR.buildSimulated());
 const base = () => ({ ...E.defaults(), asOf: D.meta.asOf, year: U.miYear(U.mi(D.meta.asOf)) });
-const ui = () => ({ view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null, still: true });
+const ui = () => ({ view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null, still: true, narrow: false, filter: {} });
 let renders = 0;
 const problems = [];
 
@@ -28,7 +28,8 @@ function run(label, data, ctx, u) {
 const cy = base().year;
 run('default', D, base(), ui());
 D.dims.ships.forEach((_, ship) => run('ship ' + ship, D, { ...base(), ship }, ui()));
-for (const year of [cy + 1, cy + 2]) run('year ' + year, D, { ...base(), year }, ui());
+for (const year of [cy - 2, cy - 1, cy + 1, cy + 2]) run('year ' + year, D, { ...base(), year }, ui());
+run('phone', D, base(), { ...ui(), narrow: true });
 for (const window of ['ytd', 'r12']) for (const bridgeBase of ['bud', 'fc', 'stly']) run(window + ' ' + bridgeBase, D, { ...base(), window }, { ...ui(), bridgeBase });
 for (const k of Object.keys(E.defaults().flags)) { const c = base(); c.flags = { ...c.flags, [k]: !c.flags[k] }; run('flag ' + k, D, c, ui()); }
 run('tables', D, base(), { ...ui(), tables: { bridge: 1, river: 1, cashm: 1, window: 1 }, revTab: 't12', voyQ: '2', saved: { vol: 0.1, price: 0, cancel: 0, dil: 0, fuel: 0 } });
