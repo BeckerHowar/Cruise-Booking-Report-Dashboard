@@ -230,15 +230,20 @@ C.river = function (sources, uses, o) {
     return 'M' + x0 + ' ' + a0.toFixed(1) + ' C' + mx + ' ' + a0.toFixed(1) + ' ' + mx + ' ' + b0.toFixed(1) + ' ' + x1 + ' ' + b0.toFixed(1) +
            ' L' + x1 + ' ' + b1.toFixed(1) + ' C' + mx + ' ' + b1.toFixed(1) + ' ' + mx + ' ' + a1.toFixed(1) + ' ' + x0 + ' ' + a1.toFixed(1) + ' Z';
   };
-  const rnd = U.rng(7);
-  const motes = (x0, a0, a1, x1, b0, b1, value, fill) => {
+  // Each dot stands for a fixed amount of cash, so a stream gains dots when the cockpit
+  // pushes more through it. Every stream draws from its own seeded sequence: a stream
+  // that grows keeps the dots it had and adds new ones, rather than reshuffling.
+  const perDot = o.perDot || total / 480;
+  const motes = (x0, a0, a1, x1, b0, b1, value, fill, name) => {
     if (o.still) return '';
-    const n = Math.max(1, Math.min(26, Math.round(value / total * 70)));
+    let seed = 7;
+    for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) >>> 0;
+    const rnd = U.rng(seed), n = Math.max(1, Math.min(320, Math.round(value / perDot)));
     let out = '';
     for (let i = 0; i < n; i++) {
-      const f = 0.12 + rnd() * 0.76, ya = a0 + (a1 - a0) * f, yb = b0 + (b1 - b0) * f, mx = (x0 + x1) / 2;
+      const f = 0.08 + rnd() * 0.84, ya = a0 + (a1 - a0) * f, yb = b0 + (b1 - b0) * f, mx = (x0 + x1) / 2;
       const dur = (5 + rnd() * 6).toFixed(1), delay = (rnd() * 11).toFixed(1);
-      out += '<circle class="mote" r="1.35" fill="' + fill + '" opacity="0.7"><animateMotion dur="' + dur + 's" begin="-' + delay + 's" repeatCount="indefinite" path="M' +
+      out += '<circle class="mote" r="0.85" fill="' + fill + '" opacity="0.75"><animateMotion dur="' + dur + 's" begin="-' + delay + 's" repeatCount="indefinite" path="M' +
         x0 + ' ' + ya.toFixed(1) + ' C' + mx + ' ' + ya.toFixed(1) + ' ' + mx + ' ' + yb.toFixed(1) + ' ' + x1 + ' ' + yb.toFixed(1) + '"/></circle>';
     }
     return out;
@@ -250,7 +255,7 @@ C.river = function (sources, uses, o) {
   for (const s of L) {
     const seg = s.value * k;
     flows += '<path d="' + band(xL + nodeW, s.y, s.y + s.h, xC, cy, cy + seg) + '" fill="' + colour(s) + '" opacity="0.22"' + tip(s.name + '\n' + share(s.value)) + '/>';
-    dots += motes(xL + nodeW, s.y, s.y + s.h, xC, cy, cy + seg, s.value, colour(s));
+    dots += motes(xL + nodeW, s.y, s.y + s.h, xC, cy, cy + seg, s.value, colour(s), 'in:' + s.name);
     nodes += '<rect x="' + xL + '" y="' + s.y + '" width="' + nodeW + '" height="' + s.h + '" rx="2" fill="' + colour(s) + '"/>';
     labels += '<text x="' + (xL + nodeW + 10) + '" y="' + (s.y + s.h / 2 + 4) + '" font-size="12.5" fill="var(--ink)" pointer-events="none">' + U.esc(s.name) +
       ' <tspan fill="var(--ink-2)" font-size="12">' + U.money(s.value) + '</tspan></text>';
@@ -260,7 +265,7 @@ C.river = function (sources, uses, o) {
   for (const u of R) {
     const seg = u.value * k;
     flows += '<path d="' + band(xC + nodeW, cy, cy + seg, xR, u.y, u.y + u.h) + '" fill="' + colour(u) + '" opacity="' + (u.kind === 'reserve' ? 0.3 : 0.2) + '"' + tip(u.name + '\n' + share(u.value)) + '/>';
-    dots += motes(xC + nodeW, cy, cy + seg, xR, u.y, u.y + u.h, u.value, u.kind === 'reserve' ? 'var(--series-cash)' : 'var(--ink-2)');
+    dots += motes(xC + nodeW, cy, cy + seg, xR, u.y, u.y + u.h, u.value, u.kind === 'reserve' ? 'var(--series-cash)' : 'var(--ink-2)', 'out:' + u.name);
     nodes += '<rect x="' + xR + '" y="' + u.y + '" width="' + nodeW + '" height="' + u.h + '" rx="2" fill="' + colour(u) + '"/>';
     labels += '<text x="' + (xR - 9) + '" y="' + (u.y + u.h / 2 + 4) + '" text-anchor="end" font-size="12.5" fill="var(--ink)" pointer-events="none">' + U.esc(u.name) +
       ' <tspan fill="var(--ink-2)" font-size="12">' + U.money(u.value) + '</tspan></text>';
@@ -269,6 +274,61 @@ C.river = function (sources, uses, o) {
   nodes += '<rect x="' + xC + '" y="' + cY + '" width="' + nodeW + '" height="' + cH + '" rx="2" fill="var(--ink-2)"/>';
   labels += '<text x="' + (xC + nodeW / 2) + '" y="' + (cY - 10) + '" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--ink)">Cash moved ' + U.money(total) + '</text>';
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Cash river: where cash came from and where it went">' + flows + dots + nodes + labels + '</svg>';
+};
+
+/* ---------------------------------------------------------------------
+   FLEET FILL MAP. One cell per voyage: a row per ship, placed by sail date
+   and as wide as the voyage is long. Shade is the share of target booked
+   (or, in pace mode, how far ahead or behind the booking curve it is).
+   Voyages left of the as-of line have sailed and are final.
+   o = { rows:[ship index], ships:[names], regions:[names], asOf, mode }
+   --------------------------------------------------------------------- */
+C.fillShade = function (pct, pace, sailed, mode) {
+  if (pct == null) return 'none';
+  if (mode === 'pace') {
+    const k = Math.round(U.clamp(Math.abs(pace) / (sailed ? 0.10 : 0.15), 0, 1) * 82);
+    return 'color-mix(in srgb, var(' + (pace >= 0 ? '--good' : '--crit') + ') ' + k + '%, var(--surface-2))';
+  }
+  return 'color-mix(in srgb, var(--accent) ' + Math.round(U.clamp(pct, 0, 1) * 92) + '%, var(--surface-2))';
+};
+C.fillMap = function (M, o) {
+  const W = 1120, pL = 86, pR = 14, pT = 52, rowH = 42, gap = 12;      // two label lines above the rows: the as-of marker, then the months
+  const H = pT + o.rows.length * (rowH + gap) + 6, iw = W - pL - pR;
+  const x = d => pL + (d - M.t0) / (M.t1 - M.t0) * iw;
+  let g = '';
+  for (let m = M.from; m <= M.to + 1; m++) {
+    const xm = x(U.miStart(m)), jan = m % 12 === 0;
+    g += '<line x1="' + xm + '" x2="' + xm + '" y1="' + (pT - 8) + '" y2="' + (H - 6) + '" stroke="' + (jan ? 'var(--axis)' : 'var(--grid)') + '" stroke-width="' + (jan ? 1.25 : 1) + '"/>';
+    if (m <= M.to && (m - M.from) % 3 === 0) g += '<text x="' + (xm + 4) + '" y="' + (pT - 12) + '" font-size="' + FS + '" fill="var(--ink-2)">' + U.miLabel(m) + '</text>';
+  }
+  o.rows.forEach((s, r) => {
+    g += '<text x="' + (pL - 10) + '" y="' + (pT + r * (rowH + gap) + rowH / 2 + 4) + '" text-anchor="end" font-size="12.5" font-weight="600" fill="var(--ink)">' + U.esc(o.ships[s]) + '</text>';
+  });
+  let cells = '';
+  for (const c of M.cells) {
+    const r = o.rows.indexOf(c.v.ship);
+    if (r < 0) continue;
+    const x0 = Math.max(pL, x(c.v.sail)), x1 = Math.min(W - pR, x(c.v.end)), w = Math.max(2, x1 - x0 - 1.2), y = pT + r * (rowH + gap);
+    const lines = [c.v.code + ' · ' + o.ships[c.v.ship] + ' · ' + o.regions[c.v.region],
+      'Sails ' + U.shortDate(c.v.sail) + ' · ' + c.v.days + ' days' + (c.v.charter ? ' · charter' : '') + (c.v.nonRev ? ' · non-revenue' : '')];
+    if (c.pct != null) {
+      lines.push('Booked ' + U.money(c.tix) + ' of ' + U.money(c.target) + ' target (' + U.pct(c.pct, 0) + ')');
+      lines.push(c.sailed ? 'Sailed — final, ' + U.pp(c.pace, 0) + ' against target'
+                          : 'Curve says ' + U.pct(c.expected, 0) + ' by now · pace ' + U.pp(c.pace, 0) + ' · outlook ' + U.money(c.outlook));
+      if (c.flagged) lines.push('On the watchlist: projected to finish 5% or more short');
+    } else lines.push('No target: sailed without revenue guests');
+    cells += '<rect data-v="' + c.v.i + '" x="' + x0.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + rowH + '" rx="2" style="fill:' + C.fillShade(c.pct, c.pace, c.sailed, o.mode) + '" stroke="' +
+      (c.flagged ? 'var(--crit)' : 'var(--hairline-2)') + '" stroke-width="' + (c.flagged ? 1.8 : 0.8) + '"' + (c.pct == null ? ' stroke-dasharray="2 2"' : '') + tip(lines.join('\n')) + '/>';
+  }
+  // The marker is one group so replay can slide it without redrawing the map.
+  const xa = x(o.asOf + 1);
+  const mark = '<g class="fm-mark" data-x="' + xa.toFixed(1) + '"' + ((xa >= pL && xa <= W - pR) ? '' : ' visibility="hidden"') + '>' +
+    '<line x1="' + xa + '" x2="' + xa + '" y1="' + (pT - 44) + '" y2="' + (H - 4) + '" stroke="var(--ink)" stroke-width="1.6"/>' +
+    '<text x="' + (xa - 7) + '" y="' + (pT - 32) + '" text-anchor="end" font-size="' + FS + '" font-weight="700" fill="var(--ink)">sailed</text>' +
+    '<text class="fm-date" x="' + (xa + 7) + '" y="' + (pT - 32) + '" font-size="' + FS + '" font-weight="700" fill="var(--ink)">still filling · as of ' + U.shortDate(o.asOf) + '</text></g>';
+  return '<svg class="fillmap" viewBox="0 0 ' + W + ' ' + H + '" role="img" data-mode="' + o.mode + '" data-t0="' + M.t0 + '" data-t1="' + M.t1 + '" data-pl="' + pL + '" data-iw="' + iw +
+    '" aria-label="Fleet fill map: every voyage by ship and sail date, shaded by ' + (o.mode === 'pace' ? 'pace against the booking curve' : 'share of target booked') + '">' +
+    '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="var(--chart-surface)" rx="6"/>' + g + cells + mark + '</svg>';
 };
 
 C.legend = items => '<div class="legend">' + items.map(i =>

@@ -24,7 +24,7 @@ const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion:
 const isNarrow = () => window.innerWidth < 720;
 const ui = { view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null,
              source: 'simulated', sigma: { state: 'idle', message: '' }, still: reduced, narrow: isNarrow(),
-             sort: {}, filter: {}, flagsOpen: false, glossOpen: false, cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
+             sort: {}, filter: {}, flagsOpen: false, glossOpen: false, mapMode: 'fill', cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
 try { const s = JSON.parse(store.get('savedScenario') || 'null'); if (s && typeof s.vol === 'number') ui.saved = s; } catch (e) { /* unreadable */ }
 
 /* ---------- shareable link: the whole state lives in the address ---------- */
@@ -217,7 +217,66 @@ function render() {
   writeHash();
 }
 
-function stopReplay() { if (replay) { clearInterval(replay); replay = null; } }
+/* ---------- replay ----------
+   One clock runs from the first close to the last. The fleet fill map is repainted in
+   place for every day the clock passes, so it flows; everything else on the tab is
+   redrawn as each month-end goes by. Every close is computed once before the clock
+   starts, so those redraws do not stall the motion. */
+const REPLAY_SECONDS = 18;
+function stopReplay() {
+  if (!replay) return;
+  cancelAnimationFrame(replay.raf); clearInterval(replay.timer);
+  replay = null;
+}
+function paintMap(day) {
+  const svg = document.querySelector('#view svg.fillmap');
+  if (!svg || svg.dataset.day === String(day)) return;
+  svg.dataset.day = day;
+  const tix = E.bookedAt(D, ctx, day), mode = svg.dataset.mode;
+  svg.querySelectorAll('rect[data-v]').forEach(r => {
+    const v = D.voyages[+r.dataset.v];
+    if (!v.tgtRev) return;
+    const pct = tix[v.i] / v.tgtRev, sailed = v.sail <= day;
+    // between closes, pace is read against the booking curve as it stood at the last one
+    const pace = sailed ? pct - 1 : pct - E.curveOf(D, v, ctx.asOf).cumBook[Math.min(80, Math.max(0, Math.floor((v.sail - day) / 10)))];
+    r.style.fill = CBR.charts.fillShade(pct, pace, sailed, mode);
+  });
+  const d = svg.dataset, x = +d.pl + (day + 1 - d.t0) / (d.t1 - d.t0) * d.iw, mark = svg.querySelector('.fm-mark');
+  mark.setAttribute('transform', 'translate(' + (x - mark.dataset.x).toFixed(1) + ',0)');
+  mark.setAttribute('visibility', x >= +d.pl && x <= +d.pl + +d.iw ? 'visible' : 'hidden');
+  svg.querySelector('.fm-date').textContent = 'still filling · as of ' + U.shortDate(day);
+}
+function startReplay() {
+  const opts = [...$('asOfSel').options].map(o => +o.value), last = opts[opts.length - 1];
+  if (opts.length < 2) return;
+  if (reduced) {                                   // reduced motion: one step per close, no animation
+    let i = 0;
+    replay = { timer: setInterval(() => { i++; if (i >= opts.length) { stopReplay(); render(); return; } ctx.asOf = opts[i]; render(); }, 1100) };
+    ctx.asOf = opts[0]; render();
+    return;
+  }
+  replay = { raf: 0, i: 0, day: opts[0], t: 0 };
+  $('playBtn').textContent = 'Preparing…';
+  setTimeout(() => {
+    if (!replay) return;
+    for (const a of opts) { ctx.asOf = a; V.render[ui.view](D, ctx, ui); E.checks(D, ctx); }
+    ctx.asOf = opts[0]; render();
+    const tick = now => {
+      if (!replay) return;
+      const R = replay;
+      // a tab left in the background stops getting frames; the cap makes it carry on from where it was, not leap to the end
+      if (R.t) R.day += Math.min(now - R.t, 100) / 1000 * (last - opts[0]) / REPLAY_SECONDS;
+      R.t = now;
+      if (R.day >= last) { stopReplay(); ctx.asOf = last; render(); return; }
+      let crossed = false;
+      while (R.i + 1 < opts.length && R.day >= opts[R.i + 1]) { R.i++; crossed = true; }
+      if (crossed) { ctx.asOf = opts[R.i]; render(); }
+      paintMap(Math.floor(R.day));
+      R.raf = requestAnimationFrame(tick);
+    };
+    replay.raf = requestAnimationFrame(tick);
+  }, 30);
+}
 
 /* ---------- events ---------- */
 document.addEventListener('click', ev => {
@@ -238,6 +297,7 @@ document.addEventListener('click', ev => {
   else if (act === 'focus') ui.focus = (arg[0] === '_' || ui.focus === arg) ? null : arg;
   else if (act === 'rev') ui.revTab = arg;
   else if (act === 'voyq') ui.voyQ = arg;
+  else if (act === 'map') ui.mapMode = arg;
   else if (act === 'win') ctx.window = arg;
   else if (act === 'flags') ui.flagsOpen = !ui.flagsOpen;
   else if (act === 'gloss') ui.glossOpen = !ui.glossOpen;
@@ -267,15 +327,7 @@ $('yearSel').addEventListener('change', ev => { ctx.year = +ev.target.value; ren
 $('shipSel').addEventListener('change', ev => { ctx.ship = +ev.target.value; render(); });
 $('playBtn').addEventListener('click', () => {
   if (replay) { stopReplay(); render(); return; }
-  const opts = [...$('asOfSel').options].map(o => +o.value);
-  let i = 0;
-  ctx.asOf = opts[0];
-  replay = setInterval(() => {
-    i++;
-    if (i >= opts.length) { stopReplay(); render(); return; }
-    ctx.asOf = opts[i]; render();
-  }, 1100);
-  render();
+  startReplay();
 });
 $('resetBtn').addEventListener('click', () => {
   stopReplay();

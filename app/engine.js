@@ -204,6 +204,17 @@ E.position = function (D, ctx, t) {
   });
 };
 
+// Booked ticket revenue by voyage at day t — the one figure the fill map needs. Not cached:
+// continuous replay asks for a new day many times a second and never for the same one twice.
+E.bookedAt = function (D, ctx, t) {
+  const R = reader(ctx), out = f64(D.voyages.length);
+  for (const b of D.bookings) {
+    if (b.bd > t || R.skip(b)) continue;
+    out[b.v] += (b.cd && b.cd <= t) ? R.fee(b) : R.rev(b);
+  }
+  return out;
+};
+
 E.apcd = (v, ctx) => (v.nonRev && ctx.flags.apcdNet) ? 0 : v.apcdFull;
 
 /* ---------------------------------------------------------------------
@@ -789,6 +800,30 @@ E.weeklyCancel = function (D, ctx, weeks) {
 /* ---------------------------------------------------------------------
    HEADLINES & INTEGRITY
    --------------------------------------------------------------------- */
+// Every voyage sailing in a fixed window, with how full it is against target. The window
+// hangs off the extract date rather than the as-of date, so replaying earlier closes fills
+// in the same frame instead of sliding it.
+E.fillMap = function (D, ctx) {
+  const am = U.mi(D.meta.asOf), from = am - 12, to = (U.miYear(am) + 1) * 12 + 11;
+  const t0 = U.miStart(from), t1 = U.miEnd(to) + 1;
+  const P = E.position(D, ctx, ctx.asOf), O = E.outlook(D, ctx), cells = [];
+  for (const v of D.voyages) {
+    if (v.end <= t0 || v.sail >= t1 || (ctx.ship >= 0 && v.ship !== ctx.ship)) continue;
+    const tix = P.rev[v.i] + P.fee[v.i], sailed = v.sail <= ctx.asOf, target = v.tgtRev || 0, pct = target ? tix / target : null;
+    let expected = null, shortfall = 0;
+    if (!sailed && target) {
+      expected = E.curveOf(D, v, ctx.asOf).cumBook[Math.min(80, Math.floor((v.sail - ctx.asOf) / 10))];
+      shortfall = target - O.tix[v.i];
+    }
+    cells.push({ v, tix, target, pct, sailed, expected, outlook: O.tix[v.i],
+                 // sailed voyages are judged against target; open ones against where the curve says they should be
+                 pace: pct == null ? null : sailed ? pct - 1 : pct - expected,
+                 // the same test and the same 400-day horizon as the watchlist, so the two always agree
+                 flagged: !sailed && !v.charter && !v.nonRev && target > 0 && v.sail - ctx.asOf <= 400 && shortfall > Math.max(150e3, 0.05 * target) });
+  }
+  return { from, to, t0, t1, cells };
+};
+
 E.headline = function (D, ctx) {
   const cy = U.miYear(U.mi(ctx.asOf)), P = E.position(D, ctx, ctx.asOf), am = U.mi(ctx.asOf);
   const yr = y => {

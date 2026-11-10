@@ -213,6 +213,10 @@ function bridgeCard(D, ctx, ui) {
 
 function riverCard(D, ctx, ui) {
   const rv = E.river(D, ctx);
+  // One dot is a fixed amount of cash: the fleet's base-case year spread over 480 dots.
+  // A single ship, a shorter period or a cockpit setting then shows as more or fewer dots.
+  const ref = E.river(D, { ...ctx, ship: -1, window: 'fy', scen: { vol: 0, price: 0, cancel: 0, dil: 0, fuel: 0 } });
+  const perDot = (ref.moved || rv.moved || 1) / 480;
   let body;
   if (H.showTable(ui, 'river')) {
     const n = Math.max(rv.sources.length, rv.uses.length), rows = [];
@@ -223,14 +227,14 @@ function riverCard(D, ctx, ui) {
     rows.push({ cls: 'sub', cells: ['Cash in', U.money(rv.moved), '100%', 'Cash out and reserves', U.money(rv.moved), '100%'] });
     body = H.table([{ h: 'Where it came from', l: 1 }, { h: 'Amount' }, { h: 'Share' }, { h: 'Where it went', l: 1 }, { h: 'Amount' }, { h: 'Share' }], rows);
   } else {
-    body = '<div class="river">' + C.river(rv.sources, rv.uses, { still: ui.still }) + '</div>';
+    body = '<div class="river">' + C.river(rv.sources, rv.uses, { still: ui.still, perDot }) + '</div>';
   }
   const note = rv.W.forecast
     ? 'Months after the close are the schedule the current book implies: final payments falling due, pickup still to arrive, refunds on the cancellations still to come.'
     : 'Every month in this window is closed, so this is cash that has actually moved.';
   return H.card('river', '03', 'Cash river', 'Cash in and out · ' + rv.W.label + ' · ' + H.shipName(D, ctx),
     body + '<div class="foot-note">Guest payments follow the payment terms: a ' + U.pct(ctx.terms.deposit, 0) + ' deposit at booking and the balance ' +
-    ctx.terms.finalDays + ' days before sailing. ' + note +
+    ctx.terms.finalDays + ' days before sailing. ' + note + (ui.still ? '' : ' Each dot is about ' + U.money(perDot) + ' of cash, so a stream gains or loses dots as the cockpit moves it.') +
     (D.costs ? (ctx.ship >= 0 ? ' Shoreside cost and debt service are fleet-level and are left out for a single ship.' : '')
              : ' Operating costs are not in the booking extract, so only refunds and commissions flow out.') + '</div>',
     H.tableBtn('river', ui));
