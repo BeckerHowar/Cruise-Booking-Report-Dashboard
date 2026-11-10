@@ -87,6 +87,7 @@ E.prepare = function (D) {
   for (const b of B) {
     b.bmi = U.mi(b.bd);
     b.cmi = b.cd ? U.mi(b.cd) : -1;
+    if (!b.n) b.n = 1;                       // a grouped row stands for n bookings; g and the amounts are already sums
     if (b.bmi < minMi) minMi = b.bmi;
   }
   D.range = { minMi, maxMi };
@@ -156,7 +157,7 @@ E.position = function (D, ctx, t) {
       const list = b.nr ? 0 : b.list;
       P.rev[v] += r; P.list[v] += list; P.dil[v] += R.dil(b); P.pcd[v] += pcd;
       if (b.ch === 1) P.tradeRev[v] += r;
-      if (cnt) { P.guests[v] += b.g; P.suites[v] += 1; P.suitesT[b.t][v] += 1; if (b.rep) P.repGuests[v] += b.g; }
+      if (cnt) { P.guests[v] += b.g; P.suites[v] += b.n; P.suitesT[b.t][v] += b.n; if (b.rep) P.repGuests[v] += b.g; }
       P.pcdT[b.t][v] += pcd; P.listT[b.t][v] += list; P.revT[b.t][v] += r;
     }
     return P;
@@ -214,7 +215,7 @@ E.production = function (D, ctx, cutoff) {
     const rows = Array.from({ length: n }, (_, i) => ({
       mi: lo + i, book: 0, count: 0, suites: 0, pcd: 0, guests: 0, list: 0, can: 0, canX: 0, fee: 0, canCount: 0,
       ch: z(dm.channels.length), dt: z(dm.dtypes.length), promoAmt: 0, c2cDil: 0, promoCnt: z(dm.promos.length),
-      win: z(3), winX: z(3), ship: z(dm.ships.length), shipCan: z(dm.ships.length), rep: 0, fvc: 0, bookers: new Set(),
+      win: z(3), winX: z(3), ship: z(dm.ships.length), shipCan: z(dm.ships.length), rep: 0, fvc: 0, bookers: new Set(), bookerN: 0, nBookers: 0,
     }));
     for (const b of D.bookings) {
       if (b.bd > cutoff || R.skip(b)) continue;
@@ -222,22 +223,23 @@ E.production = function (D, ctx, cutoff) {
       if (ctx.ship >= 0 && v.ship !== ctx.ship) continue;
       const r = R.rev(b), row = rows[b.bmi - lo];
       if (!b.nr) {
-        row.book += r; row.count++; row.list += b.list; row.ch[b.ch] += r; row.ship[v.ship] += r;
-        row.dt[b.dt] += b.dAmt; row.promoAmt += b.pAmt; row.promoCnt[b.promo]++;
+        row.book += r; row.count += b.n; row.list += b.list; row.ch[b.ch] += r; row.ship[v.ship] += r;
+        row.dt[b.dt] += b.dAmt; row.promoAmt += b.pAmt; row.promoCnt[b.promo] += b.n;
         if (!ctx.flags.c2cNorm) row.c2cDil += b.c2cDil;
         const w = Math.min(2, Math.max(0, v.year - U.miYear(b.bmi)));
         row.win[w] += r; if (!v.charter) row.winX[w] += r;
-        if (b.gid) row.bookers.add(b.gid);
-        if (b.rep) row.rep++;
-        if (b.fvc) row.fvc++;
+        if (b.gid) row.bookers.add(b.gid); else row.bookerN += b.bk || 0;    // grouped rows carry a pre-counted figure
+        if (b.rep) row.rep += b.n;
+        if (b.fvc) row.fvc += b.n;
       }
-      if (R.counts(b)) { row.suites++; row.pcd += b.g * v.days; row.guests += b.g; }
+      if (R.counts(b)) { row.suites += b.n; row.pcd += b.g * v.days; row.guests += b.g; }
       if (b.cd && b.cd <= cutoff) {
         const c = rows[b.cmi - lo];
-        c.can += r; c.fee += R.fee(b); c.canCount++; c.shipCan[v.ship] += r;
+        c.can += r; c.fee += R.fee(b); c.canCount += b.n; c.shipCan[v.ship] += r;
         if (b.c2c !== 1) c.canX += r;
       }
     }
+    for (const r of rows) r.nBookers = r.bookers.size + r.bookerN;
     return { lo, rows };
   });
 };
@@ -680,7 +682,7 @@ E.tradeAccounts = function (D, ctx) {
     if (ctx.ship >= 0 && v.ship !== ctx.ship) continue;
     const r = R.rev(b), a = rows[b.acct];
     if (b.bd >= from && b.bd <= ctx.asOf) {
-      a.book += r; a.count++; a.pcd += b.g * v.days;
+      a.book += r; a.count += b.n; a.pcd += b.g * v.days;
       if (b.cd && b.cd <= ctx.asOf) a.can += r;
     } else if (b.bd >= from - 365 && b.bd <= ctx.asOf - 365) a.ly += r;
   }
@@ -699,7 +701,7 @@ E.guests = function (D, ctx, year) {
     if (b.bd > ctx.asOf || R.skip(b)) continue;
     const v = V[b.v];
     if (ctx.ship >= 0 && v.ship !== ctx.ship) continue;
-    if (!b.nr && b.bd >= ytd) { repeatShip[v.ship].bookings++; if (b.rep) repeatShip[v.ship].repeat++; }
+    if (!b.nr && b.bd >= ytd) { repeatShip[v.ship].bookings += b.n; if (b.rep) repeatShip[v.ship].repeat += b.n; }
     if (b.fvc && b.src >= 0) { const i = V[b.src].smi - lo; if (i >= 0 && i < n) fvc[i] += b.g; }
     if ((b.cd && b.cd <= ctx.asOf) || !R.counts(b)) continue;
     if (v.year === year) geo[b.mkt][v.region] += b.g;

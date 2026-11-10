@@ -13,7 +13,7 @@ const sumRows = (rows, from, to, lo) => {
     const r = rows[m - lo];
     if (!r) continue;
     t.book += r.book; t.can += r.can; t.canX += r.canX; t.fee += r.fee; t.count += r.count; t.suites += r.suites; t.pcd += r.pcd; t.guests += r.guests;
-    t.list += r.list; t.canCount += r.canCount; t.rep += r.rep; t.bookers += r.bookers.size;
+    t.list += r.list; t.canCount += r.canCount; t.rep += r.rep; t.bookers += r.nBookers;
     t.dil += r.promoAmt + r.c2cDil + r.dt.reduce((s, x) => s + x, 0);
     r.ship.forEach((x, i) => { t.ship[i] = (t.ship[i] || 0) + x - r.shipCan[i]; });
     r.ch.forEach((x, i) => { t.ch[i] = (t.ch[i] || 0) + x; });
@@ -178,7 +178,7 @@ V.render.guests = function (D, ctx, ui) {
       H.body(C.stack({ labels: months.map(U.miLabel), series: shipSer, yFmt: U.int, tipFmt: U.int, line: repLine, label: 'Guests sailed by month' })) +
       C.legend(shipSer.concat([{ name: 'Repeat guests, % (right axis)', color: 'var(--c5)' }]))) +
     H.card('gbook', '02', 'Guests booking', 'Distinct bookers by booking month, with the share of bookings from repeat guests',
-      H.body(C.stack({ labels: months.map(U.miLabel), series: [{ name: 'Distinct bookers', color: 'var(--c1)', values: bk.map(r => r.bookers.size) }], yFmt: U.int, tipFmt: U.int,
+      H.body(C.stack({ labels: months.map(U.miLabel), series: [{ name: 'Distinct bookers', color: 'var(--c1)', values: bk.map(r => r.nBookers) }], yFmt: U.int, tipFmt: U.int,
         line: { name: 'Repeat share of bookings', color: 'var(--c5)', fmt: v => U.pct(v, 0), values: bk.map(r => ratio(r.rep, r.count)) }, label: 'Bookers by month' })) +
       C.legend([{ name: 'Distinct bookers', color: 'var(--c1)' }, { name: 'Repeat share, % (right axis)', color: 'var(--c5)' }])) +
     '</div><div class="row two">' +
@@ -363,9 +363,10 @@ V.render.defs = function (D, ctx, ui) {
     H.card('dmap', '06', 'Deck to dashboard map', 'Which tab replaces which slides of the 88-slide booking report',
       H.table([{ h: 'Slides', l: 1 }, { h: 'Deck view', l: 1 }, { h: 'Dashboard tab', l: 1 }], SLIDES.map(s => [s[0], s[1], go(s[2])]))) +
     H.card('dsig', '07', 'Sigma data contract', 'Embed this page in a Sigma workbook as a plugin, then point it at two elements with these column names',
-      '<div class="pad policy"><p>Column names are matched ignoring case, spaces and punctuation. Dates may be Sigma datetimes or ISO strings. Budget and forecast arrive as revenue and guest days per voyage; ' +
+      '<div class="pad policy"><p>Column names are matched ignoring case, spaces and punctuation. Dates may be Sigma datetimes or ISO strings. Sigma hands data over 25,000 rows at a time, so each element is read page by page ' +
+      'and nothing is drawn until both tables are complete. Budget and forecast arrive as revenue and guest days per voyage; ' +
       'operating costs are not part of the extract, so with Sigma data the profit bridge stops at ticket revenue less commissions and the cash river shows refunds and commissions only. ' +
-      '<b>The connector follows Sigma\'s published plugin API but has not yet been run inside a workbook.</b></p></div>' +
+      '<b>The connector follows Sigma\'s published plugin API and is tested against a simulated host, but has not yet been run inside a workbook.</b></p></div>' +
       '<h3 class="subhead">Bookings element</h3>' + contract('bookings') + '<h3 class="subhead">Voyages element</h3>' + contract('voyages'));
 };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

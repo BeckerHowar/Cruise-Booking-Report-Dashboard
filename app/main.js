@@ -83,13 +83,13 @@ function render() {
   badge.title = checks.map(c => (c.ok ? '✓ ' : '✗ ') + c.name + ' — ' + c.detail).join('\n');
 
   const note = $('srcNote');
-  if (ui.source === 'sigma' && D.source !== 'sigma') {
+  if (ui.source === 'sigma') {
+    const st = ui.sigma.state, live = st === 'connected' && D.source === 'sigma';
+    const head = { loading: 'Loading from Sigma', waiting: 'Waiting for Sigma', error: 'Sigma error', standalone: 'Sigma is not connected', connected: 'Live from Sigma' }[st] || 'Sigma';
     note.hidden = false;
-    note.innerHTML = '<b>Sigma is not connected</b> — still showing simulated data. ' + U.esc(ui.sigma.message || '') +
-      ' The column contract is under <a href="#" data-act="view:defs">Definitions &amp; data</a>.';
-  } else if (D.source === 'sigma') {
-    note.hidden = false;
-    note.innerHTML = '<b>Live from Sigma.</b> ' + U.esc(ui.sigma.message || '');
+    note.innerHTML = '<b>' + head + '.</b> ' + U.esc(ui.sigma.message || '') +
+      (live ? '' : D.source === 'sigma' ? ' The figures below are from the previous load.'
+                 : ' The figures below are still the simulated data. The column contract is under <a href="#" data-act="view:defs">Definitions &amp; data</a>.');
   } else note.hidden = true;
 
   $('view').innerHTML = V.render[ui.view](D, ctx, ui);

@@ -68,9 +68,10 @@ shifts, a drydock overrun, a fuel spike), so every variance traces back to somet
 
 **Sigma** reads the same two tables from a Sigma workbook when this page is embedded there as a plugin.
 Columns are matched by name; the full contract is listed on the Definitions & data tab and in
-[`app/sigma.js`](app/sigma.js). The connector follows Sigma's published plugin API and round-trips the
-simulated book in Sigma's column format in the test suite, but **it has not yet been run inside a
-workbook**. Operating costs are not part of a booking extract, so with Sigma data the profit bridge
+[`app/sigma.js`](app/sigma.js). Sigma hands data over 25,000 rows at a time, so the connector reads each
+table page by page and draws nothing until both are complete. It follows Sigma's published plugin API
+and is tested against a simulated Sigma host, but **it has not yet been run inside a workbook**.
+Operating costs are not part of a booking extract, so with Sigma data the profit bridge
 stops at ticket revenue less commissions and the cash river shows refunds and commissions only.
 
 ## Integrity checks
@@ -96,6 +97,12 @@ Run the headless check, which renders every tab under a spread of control settin
 
 ```bash
 node tests/smoke.js
+```
+
+Run the Sigma connector check, which reads a 61,000-row table through a stand-in Sigma host:
+
+```bash
+node tests/sigma.js
 ```
 
 ## Construction

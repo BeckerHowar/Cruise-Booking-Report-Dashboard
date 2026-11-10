@@ -5,27 +5,38 @@
    the simulated generator produces. Columns are matched by name, so the
    contract below is the whole integration surface.
 
-   Status: written against @sigmacomputing/plugin 1.3.2 and not yet run
-   inside a workbook. Sigma pages element data, so a bookings element
-   larger than its row limit needs the incremental subscription instead.
+   Sigma delivers element data 25,000 rows at a time. Each element is
+   therefore read page by page until it is complete, and nothing is drawn
+   from a partial table. A row normally stands for one booking; the
+   optional `bookings` column lets one row stand for several identical
+   ones (a charter held as a single contract row, say). Dates stay exact
+   days: truncating them to weeks or months moves cancellations across
+   month ends, and grouping barely shrinks a book this sparse anyway.
+
+   Status: written against @sigmacomputing/plugin 1.3.2 and exercised
+   against a simulated host; not yet run inside a workbook.
    ===================================================================== */
 (function (root) {
 'use strict';
 const CBR = root.CBR, U = CBR.util;
 const PLUGIN_URL = 'https://cdn.jsdelivr.net/npm/@sigmacomputing/plugin@1.3.2/+esm';
+const PAGE = 25000;                 // rows Sigma sends per page
+const STALL_MS = 15000;             // how long to wait for a page before concluding there are no more
 
 const CONTRACT = {
   bookings: [
     ['voyage_code', 'text', true, 'Joins to the voyage table'],
     ['suite_tier', 'text', true, 'Premium, Upper or Lower'],
-    ['booking_date', 'date', true, 'The day the suite was booked'],
-    ['cancel_date', 'date', false, 'Blank while the booking is active'],
+    ['booking_date', 'date', true, 'The exact day the suite was booked'],
+    ['cancel_date', 'date', false, 'The exact day it was cancelled; blank while the booking is active'],
     ['channel', 'text', true, 'Direct, Trade, MICE/Charter, Incentive/Group'],
     ['trade_account', 'text', false, 'Agency at HQ level, trade bookings only'],
     ['promotion_type', 'text', false, 'Blank or None when no promotion applies'],
     ['dilution_type', 'text', false, 'FAM, Single, Family & Friends, FVC, Future Cruise Credit, Other'],
-    ['guests', 'number', true, 'Guests in the suite'],
-    ['list_fare', 'number', true, 'Ticket fare before promotions and dilution'],
+    ['guests', 'number', true, 'Guests in the suite; the total when the row stands for several bookings'],
+    ['bookings', 'number', false, 'How many identical bookings the row stands for. Leave the column out when every row is one booking'],
+    ['bookers', 'number', false, 'Distinct bookers in the row, used in place of guest_id when a row stands for several bookings'],
+    ['list_fare', 'number', true, 'Ticket fare before promotions and dilution; this and the other amounts are totals for the row'],
     ['promotion_amount', 'number', false, 'Value of the promotion'],
     ['dilution_amount', 'number', false, 'Value of the dilution'],
     ['cancel_fee', 'number', false, 'Penalty kept on a cancelled booking'],
@@ -116,7 +127,7 @@ function build(bRows, vRows) {
       bd: U.toDay(r.booking_date), cd: U.toDay(r.cancel_date),
       ch: /direct/i.test(ch) ? 0 : /trade|agen/i.test(ch) ? 1 : idx(dims.channels, ch, 'Other'),
       acct: -1, promo: idx(dims.promos, r.promotion_type, 'None'), dt: idx(dims.dtypes, r.dilution_type, 'None'),
-      g: Math.max(1, Math.round(num(r.guests)) || 2), list: num(r.list_fare), pAmt: num(r.promotion_amount), dAmt: num(r.dilution_amount),
+      g: Math.max(1, Math.round(num(r.guests)) || 2), n: Math.max(1, Math.round(num(r.bookings)) || 1), bk: num(r.bookers), list: num(r.list_fare), pAmt: num(r.promotion_amount), dAmt: num(r.dilution_amount),
       c2c: role === 'out' ? 1 : role === 'in' ? 2 : 0, c2cDil: num(r.c2c_offset_dilution), fee: num(r.cancel_fee),
       mkt: idx(dims.markets, r.guest_market, 'Unknown'), rep: yes(r.is_repeater), fvc: yes(r.is_fvc),
       src: r.fvc_source_voyage != null && byCode.has(String(r.fvc_source_voyage)) ? byCode.get(String(r.fvc_source_voyage)) : -1,
@@ -128,9 +139,9 @@ function build(bRows, vRows) {
       if (!guestIds.has(k)) guestIds.set(k, guestIds.size + 1);
       b.gid = guestIds.get(k);
     }
-    if (b.bd > pull) pull = b.bd;
     const rev = b.list - b.pAmt - b.dAmt;
     all += rev; if (b.ch === 1) trade += rev;
+    if (b.bd > pull) pull = b.bd;
     bookings.push(b);
   }
   // Budgets arrive as revenue and guest days only; trade revenue is assumed at the share the book shows.
@@ -142,7 +153,105 @@ function build(bRows, vRows) {
            dims, voyages, bookings, costs: null };
 }
 
+/* ---------------------------------------------------------------------
+   PAGING. Rows arrive as chunks at an absolute offset. A newer Sigma host
+   sends only the new rows and says when the last page has gone; an older
+   one resends everything so far and never says it is finished, so the end
+   is inferred from a short page, or from a request that adds nothing.
+   --------------------------------------------------------------------- */
+function accumulator() {
+  const st = { data: {}, rows: 0, complete: false, inferred: false, failed: false, total: null };
+  // Returns true when the chunk added rows.
+  st.apply = function (chunk) {
+    if (!chunk || !chunk.data) { st.failed = true; return false; }          // a failed evaluation ends the stream
+    const ids = Object.keys(chunk.data), len = ids.length ? chunk.data[ids[0]].length : 0;
+    const before = st.rows, offset = chunk.offset | 0;
+    if (offset === 0) { st.data = {}; st.rows = 0; st.complete = false; st.inferred = false; st.failed = false; }   // a restart replaces everything
+    if (offset > st.rows) return false;                                      // a gap: the rows cannot be placed
+    for (const id of ids) {
+      const col = st.data[id] || (st.data[id] = []), src = chunk.data[id];
+      col.length = offset;
+      for (let i = 0; i < len; i++) col.push(src[i]);
+    }
+    st.rows = offset + len;
+    if (chunk.totalRows != null) st.total = chunk.totalRows;
+    if (chunk.isComplete) st.complete = true;
+    return st.rows > before;
+  };
+  return st;
+}
+
+// Reads one element to the end, calling onChange on every step.
+function watchElement(client, name, onChange, opt) {
+  const acc = accumulator(), page = opt.page, stall = opt.stallMs;
+  let timer = null, asked = false;
+  const settle = inferred => { acc.complete = true; acc.inferred = inferred; };
+  const next = () => {
+    clearTimeout(timer);
+    if (!acc.failed && !acc.complete && acc.rows > 0) {
+      if (acc.rows % page !== 0) settle(true);                               // a short page is the last page
+      else {
+        asked = true;
+        client.elements.fetchMoreElementData(name);
+        timer = setTimeout(() => { settle(true); onChange(); }, stall);
+      }
+    }
+    onChange();
+  };
+  acc.stop = client.elements.subscribeToIncrementalElementData(name, chunk => {
+    const grew = acc.apply(chunk), wasAsked = asked;
+    asked = false;
+    if (wasAsked && !grew && !acc.complete && !acc.failed) settle(true);     // asked for more and nothing came
+    next();
+  });
+  return acc;
+}
+
 // emit({ state, message, dataset }) — state is standalone | loading | waiting | connected | error
+function attach(client, emit, options) {
+  const opt = { page: PAGE, stallMs: STALL_MS, ...(options || {}) };
+  const cols = {}, acc = {};
+  const busy = on => { try { client.config.setLoadingState(on); } catch (e) { /* older hosts */ } };
+  const count = a => a.rows.toLocaleString('en-US') + (a.total != null ? ' of ' + a.total.toLocaleString('en-US') : '');
+  const update = () => {
+    const b = acc.bookings, v = acc.voyages;
+    if (!b || !v) return;
+    if (b.failed || v.failed) {
+      busy(false);
+      emit({ state: 'error', message: 'Sigma could not evaluate the ' + (b.failed ? 'bookings' : 'voyages') + ' element. Nothing is shown from a partial table.' });
+      return;
+    }
+    if (!cols.bookings || !cols.voyages || (!b.rows && !v.rows)) {
+      emit({ state: 'waiting', message: 'Waiting for Sigma: choose the bookings and voyages elements in the plugin panel.' });
+      return;
+    }
+    if (!b.complete || !v.complete) {
+      busy(true);
+      emit({ state: 'loading', message: 'Loading from Sigma — bookings ' + count(b) + ' rows, voyages ' + count(v) + ' rows. Nothing is drawn until both tables are complete.' });
+      return;
+    }
+    busy(false);
+    try {
+      const ds = build(toRows(b.data, cols.bookings), toRows(v.data, cols.voyages));
+      if (!ds.voyages.length || !ds.bookings.length) {
+        emit({ state: 'waiting', message: 'The selected elements returned no usable rows. Check the column names against the data contract.' });
+        return;
+      }
+      emit({ state: 'connected', dataset: ds, message:
+        b.rows.toLocaleString('en-US') + ' booking rows on ' + ds.voyages.length + ' voyages, read in full.' +
+        (ds.meta.skipped ? ' ' + ds.meta.skipped + ' rows skipped: no matching voyage.' : '') +
+        ((b.inferred || v.inferred) ? ' This Sigma host does not confirm the last page, so completeness is inferred from the page sizes.' : '') });
+    } catch (err) { emit({ state: 'error', message: 'Could not read the Sigma elements: ' + err.message }); }
+  };
+  client.config.configureEditorPanel([{ name: 'bookings', type: 'element' }, { name: 'voyages', type: 'element' }]);
+  for (const name of ['bookings', 'voyages']) {
+    client.elements.subscribeToElementColumns(name, c => { cols[name] = c; update(); });
+    acc[name] = watchElement(client, name, update, opt);
+  }
+  update();
+  return acc;
+}
+
 async function connect(emit) {
   if (root.parent === root) {
     emit({ state: 'standalone', message: 'This page is not running inside a Sigma workbook, so there is nothing to connect to. Add it to a workbook as a plugin and choose a bookings element and a voyages element.' });
@@ -151,29 +260,11 @@ async function connect(emit) {
   try {
     emit({ state: 'loading', message: 'Loading the Sigma plugin library.' });
     const { client } = await import(PLUGIN_URL);
-    client.config.configureEditorPanel([{ name: 'bookings', type: 'element' }, { name: 'voyages', type: 'element' }]);
-    const cols = {}, data = {};
-    const tryBuild = () => {
-      if (!(cols.bookings && cols.voyages && data.bookings && data.voyages)) {
-        emit({ state: 'waiting', message: 'Waiting for Sigma: choose the bookings and voyages elements in the plugin panel.' });
-        return;
-      }
-      try {
-        const ds = build(toRows(data.bookings, cols.bookings), toRows(data.voyages, cols.voyages));
-        if (!ds.voyages.length || !ds.bookings.length) { emit({ state: 'waiting', message: 'The selected elements returned no usable rows. Check the column names against the data contract.' }); return; }
-        emit({ state: 'connected', message: ds.bookings.length.toLocaleString('en-US') + ' bookings on ' + ds.voyages.length + ' voyages from Sigma' +
-          (ds.meta.skipped ? ' (' + ds.meta.skipped + ' bookings skipped: no matching voyage)' : '') + '.', dataset: ds });
-      } catch (err) { emit({ state: 'error', message: 'Could not read the Sigma elements: ' + err.message }); }
-    };
-    for (const name of ['bookings', 'voyages']) {
-      client.elements.subscribeToElementColumns(name, c => { cols[name] = c; tryBuild(); });
-      client.elements.subscribeToElementData(name, d => { data[name] = d; tryBuild(); });
-    }
-    tryBuild();
+    attach(client, emit);
   } catch (err) {
     emit({ state: 'error', message: 'The Sigma plugin library did not load: ' + err.message });
   }
 }
 
-CBR.sigma = { CONTRACT, build, toRows, connect };
+CBR.sigma = { CONTRACT, build, toRows, connect, attach, accumulator, PAGE };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
