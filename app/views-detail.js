@@ -99,33 +99,15 @@ V.render.pace = function (D, ctx, ui) {
     : '<div class="pad policy"><p>There is not enough sailed history before this close to test the outlook.</p></div>';
   const better = bt.filter(r => r.absOut <= r.absTgt).length;
 
-  const map = E.fillMap(D, ctx), mode = ui.mapMode === 'pace' ? 'pace' : 'fill';
-  const mapRows = D.dims.ships.map((s, i) => i).filter(i => ctx.ship < 0 || ctx.ship === i);
-  const sw = style => '<span class="chip"><span class="swatch" style="' + style + '"></span>';
-  const mix = (v, k) => 'background:color-mix(in srgb, var(' + v + ') ' + k + '%, var(--surface-2))';
-  const mapLegend = '<div class="legend">' + (mode === 'fill'
-      ? [0, 25, 50, 75, 100].map(k => sw(mix('--accent', Math.round(k * 0.92))) + k + '% of target booked</span>').join('')
-      : sw(mix('--crit', 82)) + '15+ points behind the curve</span>' + sw(mix('--crit', 30)) + 'slightly behind</span>' +
-        sw(mix('--good', 30)) + 'slightly ahead</span>' + sw(mix('--good', 82)) + '15+ points ahead</span>') +
-    sw('background:none;border:1.8px solid var(--crit)') + 'on the watchlist</span>' +
-    sw('background:none;border:1px dashed var(--hairline-2)') + 'non-revenue</span></div>';
-  const flaggedN = map.cells.filter(c => c.flagged).length;
-  const mapCard = H.card('fillmap', '01', 'Fleet fill map', 'Every voyage from ' + U.miLabel(map.from) + ' to ' + U.miLabel(map.to) + ', by ship and sail date · ' +
-      (mode === 'fill' ? 'shaded by share of target booked' : 'shaded by pace against the booking curve') + ' · ' + flaggedN + ' on the watchlist · press Replay to watch the book fill',
-    H.body(C.fillMap(map, { rows: mapRows, ships: D.dims.ships.map(s => s.name), regions: D.dims.regions, asOf: ctx.asOf, mode })) + mapLegend +
-    '<div class="foot-note">Each cell is one voyage, as wide as it is long. Left of the line a voyage has sailed and its shade is final; right of it the shade deepens as bookings arrive. ' +
-    'A pale cell among darker neighbours is a voyage falling behind. This map always shows the same months and is not limited to the sailing year selected.</div>',
-    H.tabs('map', [['fill', 'Fill'], ['pace', 'Pace']], mode, 'Shade the map by'));
-
-  return mapCard + V.paceCard(D, ctx, y, '02', 'pace', true) +
-    H.card('curvet', '03', 'Booking curve table', y + ' sailings by quarter against ' + tgt + ' and the two prior years · ' + H.shipName(D, ctx), curveTable +
+  return V.paceCard(D, ctx, y, '01', 'pace', true) +
+    H.card('curvet', '02', 'Booking curve table', y + ' sailings by quarter against ' + tgt + ' and the two prior years · ' + H.shipName(D, ctx), curveTable +
       '<div class="foot-note">A completed prior year is measured against the revenue it finally delivered; an open one against its target. Read YoY beside Capacity YoY: when the fleet grows, Per APCD YoY is the like-for-like figure.</div>') +
-    H.card('window', '04', 'Booking window split', 'Share of each month\'s bookings by how far ahead the voyage sails' + (ctx.flags.charterEx ? ' · charters excluded' : ' · charters included'), winBody, H.tableBtn('window', ui)) +
-    H.card('consol', '05', 'Consolidated booking report', 'Each sailing year against the same time last year, by sailing quarter · ' + H.shipName(D, ctx),
+    H.card('window', '03', 'Booking window split', 'Share of each month\'s bookings by how far ahead the voyage sails' + (ctx.flags.charterEx ? ' · charters excluded' : ' · charters included'), winBody, H.tableBtn('window', ui)) +
+    H.card('consol', '04', 'Consolidated booking report', 'Each sailing year against the same time last year, by sailing quarter · ' + H.shipName(D, ctx),
       H.table([{ h: 'Sailing period', l: 1 }, { h: 'Booked' }, { h: 'STLY' }, { h: 'Change' }, { h: 'Capacity' , tip: 'Change in available passenger cruise days against a year earlier.' },
                { h: 'Per APCD', tip: 'Change in revenue per available passenger cruise day: the like-for-like comparison.' },
                { h: 'PCDs' }, { h: 'STLY PCDs' }, { h: 'LF' }, { h: 'STLY LF' }, { h: 'GPD' }, { h: 'STLY GPD' }], conRows)) +
-    H.card('accuracy', '06', 'How good is the outlook?', 'The outlook projected from earlier closes, scored against what those voyages then delivered · ' + H.shipName(D, ctx),
+    H.card('accuracy', '05', 'How good is the outlook?', 'The outlook projected from earlier closes, scored against what those voyages then delivered · ' + H.shipName(D, ctx),
       btBody + '<div class="foot-note">' + (bt.length ? 'Voyage by voyage, the outlook beat "assume the target" at ' + better + ' of ' + bt.length + ' horizons. ' : '') +
       'The outlook starts from each voyage\'s target and moves it by how much pace at that distance from sailing has actually predicted the finish' +
       (fit.fitted ? ', fitted on ' + U.int(fit.fitted) + ' voyage observations sailed before this close' : '; there is too little sailed history to fit that yet, so pace is trusted only as the book fills') +

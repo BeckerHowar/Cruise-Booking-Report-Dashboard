@@ -204,8 +204,8 @@ E.position = function (D, ctx, t) {
   });
 };
 
-// Booked ticket revenue by voyage at day t — the one figure the fill map needs. Not cached:
-// continuous replay asks for a new day many times a second and never for the same one twice.
+// Booked ticket revenue by voyage at day t. Not cached: continuous replay asks for a new
+// day many times a second and never for the same one twice.
 E.bookedAt = function (D, ctx, t) {
   const R = reader(ctx), out = f64(D.voyages.length);
   for (const b of D.bookings) {
@@ -301,25 +301,35 @@ E.cutoff = (D, ctx) => ctx.flags.alignAsOf ? ctx.asOf : Math.max(ctx.asOf, D.met
    BOOKING CURVES. Cumulative booked revenue for one sailing year, month
    by month, against the same point for the two years before it.
    --------------------------------------------------------------------- */
+// The share of a voyage that belongs to sailing year y: all or nothing by sail date, or by
+// sailing days when voyages are prorated. The curves use the same split as every table, so
+// a voyage that straddles New Year cannot make the chart and the table beside it disagree.
+E.yearShare = function (v, y, prorate) {
+  if (!prorate) return v.year === y ? 1 : 0;
+  let s = 0;
+  for (const [m, w] of v.mshare) if (U.miYear(m) === y) s += w;
+  return s;
+};
+
 E.curves = function (D, ctx, year) {
-  return memo(D, 'curve|' + year + '|' + ctx.asOf + '|' + fkey(ctx), () => {
+  return memo(D, 'curve|' + year + '|' + ctx.asOf + '|' + fkey(ctx) + (ctx.flags.prorate ? 'p' : 's'), () => {
     const N = 36, R = reader(ctx), V = D.voyages, asOfYear = U.miYear(U.mi(ctx.asOf));
     const build = (y, t) => {
       const off = (y - 2) * 12, ev = f64(N);
       let pre = 0;
       const add = (idx, x) => { if (idx < 0) pre += x; else if (idx < N) ev[idx] += x; };
+      const share = V.map(v => (ctx.ship >= 0 && v.ship !== ctx.ship) ? 0 : E.yearShare(v, y, ctx.flags.prorate));
       for (const b of D.bookings) {
-        if (b.bd > t || R.skip(b)) continue;
-        const v = V[b.v];
-        if (v.year !== y || (ctx.ship >= 0 && v.ship !== ctx.ship)) continue;
-        const r = R.rev(b);
+        const k = share[b.v];
+        if (!k || b.bd > t || R.skip(b)) continue;
+        const r = R.rev(b) * k;
         add(b.bmi - off, r);
-        if (b.cd && b.cd <= t) add(b.cmi - off, R.fee(b) - r);
+        if (b.cd && b.cd <= t) add(b.cmi - off, R.fee(b) * k - r);
       }
       // A completed year is measured against what it finally delivered; an open one against its target.
       let denom = 0;
       if (y < asOfYear) denom = pre + U.sum(ev);
-      else for (const v of V) if (v.year === y && (ctx.ship < 0 || v.ship === ctx.ship)) denom += v.tgtRev;
+      else for (const v of V) denom += v.tgtRev * share[v.i];
       const last = Math.min(N - 1, U.mi(t) - off), cum = new Array(N).fill(null), pct = new Array(N).fill(null);
       let run = pre;
       for (let i = 0; i <= last; i++) { run += ev[i]; cum[i] = run; pct[i] = denom ? run / denom : null; }
@@ -800,30 +810,6 @@ E.weeklyCancel = function (D, ctx, weeks) {
 /* ---------------------------------------------------------------------
    HEADLINES & INTEGRITY
    --------------------------------------------------------------------- */
-// Every voyage sailing in a fixed window, with how full it is against target. The window
-// hangs off the extract date rather than the as-of date, so replaying earlier closes fills
-// in the same frame instead of sliding it.
-E.fillMap = function (D, ctx) {
-  const am = U.mi(D.meta.asOf), from = am - 12, to = (U.miYear(am) + 1) * 12 + 11;
-  const t0 = U.miStart(from), t1 = U.miEnd(to) + 1;
-  const P = E.position(D, ctx, ctx.asOf), O = E.outlook(D, ctx), cells = [];
-  for (const v of D.voyages) {
-    if (v.end <= t0 || v.sail >= t1 || (ctx.ship >= 0 && v.ship !== ctx.ship)) continue;
-    const tix = P.rev[v.i] + P.fee[v.i], sailed = v.sail <= ctx.asOf, target = v.tgtRev || 0, pct = target ? tix / target : null;
-    let expected = null, shortfall = 0;
-    if (!sailed && target) {
-      expected = E.curveOf(D, v, ctx.asOf).cumBook[Math.min(80, Math.floor((v.sail - ctx.asOf) / 10))];
-      shortfall = target - O.tix[v.i];
-    }
-    cells.push({ v, tix, target, pct, sailed, expected, outlook: O.tix[v.i],
-                 // sailed voyages are judged against target; open ones against where the curve says they should be
-                 pace: pct == null ? null : sailed ? pct - 1 : pct - expected,
-                 // the same test and the same 400-day horizon as the watchlist, so the two always agree
-                 flagged: !sailed && !v.charter && !v.nonRev && target > 0 && v.sail - ctx.asOf <= 400 && shortfall > Math.max(150e3, 0.05 * target) });
-  }
-  return { from, to, t0, t1, cells };
-};
-
 E.headline = function (D, ctx) {
   const cy = U.miYear(U.mi(ctx.asOf)), P = E.position(D, ctx, ctx.asOf), am = U.mi(ctx.asOf);
   const yr = y => {

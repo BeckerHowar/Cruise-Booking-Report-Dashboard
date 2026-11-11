@@ -304,16 +304,13 @@ function sinceCard(D, ctx) {
 }
 
 function paceCard(D, ctx, year, num, id, wide) {
-  const cv = E.curves(D, ctx, year), labels = H.months(cv.startMi, cv.startMi + cv.N - 1).map(U.miLabel);
-  const tgt = E.targetLabel(D, year), series = [
-    { name: (year - 2) + ' sailings', color: 'var(--c8)', values: cv.y2.pct, dashed: '2 3', width: 1.5 },
-    { name: (year - 1) + ' sailings', color: 'var(--ink-2)', values: cv.stly.pct, dashed: '5 3', width: 1.6 },
-    { name: year + ' sailings', color: 'var(--c1)', values: cv.cy.pct, width: 2.4, live: true }].filter(s => s.values.some(v => v != null));
+  const cv = E.curves(D, ctx, year), labels = H.months(cv.startMi, cv.startMi + cv.N - 1).map(U.miLabel), tgt = E.targetLabel(D, year);
+  const has = arr => arr.some(v => v != null), legend = [{ name: year + ' sailings', color: 'var(--c1)' }];
+  if (has(cv.stly.pct)) legend.push({ name: (year - 1) + ' sailings, a year earlier', color: 'var(--c2)' });
+  if (has(cv.y2.pct)) legend.push({ name: (year - 2) + ' sailings, two years earlier', color: 'var(--c8)', dash: 1 });
   return H.card(id, num, year + ' booking pace', 'Cumulative booked revenue as a share of ' + tgt + ' · ' + H.shipName(D, ctx) +
-    (cv.gap == null ? '' : ' · ' + U.pp(cv.gap) + ' vs the same point last year'),
-    H.body(C.lines({ labels, every: wide ? 3 : 6, width: wide ? 1120 : 640, height: wide ? 310 : 250, yFmt: C.axisPct, tipFmt: v => U.pct(v), markAt: cv.at, markLabel: 'as of', series, live: { year, denom: cv.cy.denom, start: cv.startMi },
-      label: year + ' booking curve against prior years' })) +
-    C.legend([{ name: year + ' sailings', color: 'var(--c1)' }, { name: (year - 1) + ', one year earlier', color: 'var(--ink-2)', dash: 1 }, { name: (year - 2) + ', two years earlier', color: 'var(--c8)', dash: 1 }]));
+    (cv.gap == null ? '' : ' · <span class="' + H.tone(cv.gap, true, 0.0005) + '">' + U.pp(cv.gap) + '</span> against ' + (year - 1) + ' at the same point'),
+    H.body(C.pace({ labels, cy: cv.cy.pct, stly: cv.stly.pct, y2: cv.y2.pct, at: cv.at, year, denom: cv.cy.denom, start: cv.startMi, wide })) + C.legend(legend));
 }
 V.paceCard = paceCard;
 

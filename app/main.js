@@ -24,7 +24,7 @@ const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion:
 const isNarrow = () => window.innerWidth < 720;
 const ui = { view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null,
              source: 'simulated', sigma: { state: 'idle', message: '' }, still: reduced, narrow: isNarrow(),
-             sort: {}, filter: {}, flagsOpen: false, glossOpen: false, mapMode: 'fill', cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
+             sort: {}, filter: {}, flagsOpen: false, glossOpen: false, cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
 try { const s = JSON.parse(store.get('savedScenario') || 'null'); if (s && typeof s.vol === 'number') ui.saved = s; } catch (e) { /* unreadable */ }
 
 /* ---------- shareable link: the whole state lives in the address ---------- */
@@ -218,9 +218,9 @@ function render() {
 }
 
 /* ---------- replay ----------
-   One clock runs from the first close to the last. The booking pace line is extended and
-   the fleet fill map repainted in place as the clock moves, so both flow; everything else
-   on the tab is redrawn as each month-end goes by. Every close is computed once before the clock
+   One clock runs from the first close to the last. The booking pace line is extended in
+   place as the clock moves, so it flows; everything else on the tab is redrawn as each
+   month-end goes by. Every close is computed once before the clock
    starts, so those redraws do not stall the motion. */
 const REPLAY_SECONDS = 18;
 function stopReplay() {
@@ -235,7 +235,7 @@ function paintPace(at, tix) {
     const d = svg.dataset, denom = +d.denom, line = svg.querySelector('.live-line');
     if (!denom || !line) return;
     let booked = 0;
-    for (const v of D.voyages) if (v.year === +d.year && (ctx.ship < 0 || v.ship === ctx.ship)) booked += tix[v.i];
+    for (const v of D.voyages) if (ctx.ship < 0 || v.ship === ctx.ship) booked += tix[v.i] * E.yearShare(v, +d.year, ctx.flags.prorate);
     // month-end points sit on whole indices; a day part-way through a month sits that far towards the next
     const m = U.mi(Math.floor(at)), first = U.miStart(m), pos = (m - d.start - 1) + (at - first + 1) / (U.miEnd(m) - first + 1);
     if (pos < 0 || pos > d.n - 1) return;
@@ -245,24 +245,23 @@ function paintPace(at, tix) {
     const dot = svg.querySelector('.live-dot'), mark = svg.querySelector('.live-mark');
     if (dot) { dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1)); }
     if (mark) mark.setAttribute('transform', 'translate(' + (x - mark.dataset.x).toFixed(1) + ',0)');
+
+    // the gap strip: a bar for the month in progress, measured against the prior-year line at this exact point
+    const bar = svg.querySelector('.live-gap'), lab = svg.querySelector('.live-gaplabel'), now = svg.querySelector('.gap-now');
+    if (!bar) return;
+    const ref = svg._ref || (svg._ref = d.ref.split(',').map(t => t === '' ? null : +t));
+    const i0 = Math.floor(pos), i1 = Math.min(i0 + 1, d.n - 1), r0 = ref[i0], r1 = ref[i1];
+    const show = r0 != null && r1 != null && pos - i0 > 1e-6;
+    bar.setAttribute('visibility', show ? 'visible' : 'hidden'); lab.setAttribute('visibility', show ? 'visible' : 'hidden');
+    if (now) now.setAttribute('visibility', show ? 'hidden' : 'visible');
+    if (!show) return;
+    const gap = booked / denom - (r0 + (r1 - r0) * (pos - i0)), h = Math.max(1, Math.min(Math.abs(gap), +d.gm) * d.gk), cx = +d.pl + i1 / (d.n - 1) * d.iw;
+    bar.setAttribute('x', (cx - d.bw / 2).toFixed(1)); bar.setAttribute('y', (gap >= 0 ? d.gy0 - h : +d.gy0).toFixed(1)); bar.setAttribute('height', h.toFixed(1));
+    bar.setAttribute('fill', gap >= 0 ? 'var(--good)' : 'var(--crit)');
+    lab.setAttribute('x', cx.toFixed(1)); lab.setAttribute('y', (gap >= 0 ? d.gy0 - h - 5 : +d.gy0 + h + 13).toFixed(1));
+    lab.setAttribute('fill', gap >= 0 ? 'var(--good-text)' : 'var(--neg)');
+    lab.textContent = U.pp(gap, 1);
   });
-}
-function paintMap(day, tix) {
-  const svg = document.querySelector('#view svg.fillmap');
-  if (!svg) return;
-  const mode = svg.dataset.mode;
-  svg.querySelectorAll('rect[data-v]').forEach(r => {
-    const v = D.voyages[+r.dataset.v];
-    if (!v.tgtRev) return;
-    const pct = tix[v.i] / v.tgtRev, sailed = v.sail <= day;
-    // between closes, pace is read against the booking curve as it stood at the last one
-    const pace = sailed ? pct - 1 : pct - E.curveOf(D, v, ctx.asOf).cumBook[Math.min(80, Math.max(0, Math.floor((v.sail - day) / 10)))];
-    r.style.fill = CBR.charts.fillShade(pct, pace, sailed, mode);
-  });
-  const d = svg.dataset, x = +d.pl + (day + 1 - d.t0) / (d.t1 - d.t0) * d.iw, mark = svg.querySelector('.fm-mark');
-  mark.setAttribute('transform', 'translate(' + (x - mark.dataset.x).toFixed(1) + ',0)');
-  mark.setAttribute('visibility', x >= +d.pl && x <= +d.pl + +d.iw ? 'visible' : 'hidden');
-  svg.querySelector('.fm-date').textContent = 'still filling · as of ' + U.shortDate(day);
 }
 function startReplay() {
   const opts = [...$('asOfSel').options].map(o => +o.value), last = opts[opts.length - 1];
@@ -288,9 +287,9 @@ function startReplay() {
       if (R.day >= last) { stopReplay(); ctx.asOf = last; render(); return; }
       let crossed = false;
       while (R.i + 1 < opts.length && R.day >= opts[R.i + 1]) { R.i++; crossed = true; }
-      if (crossed) { ctx.asOf = opts[R.i]; render(); R.painted = null; }     // a redraw replaces the charts, so paint them again
+      if (crossed) { ctx.asOf = opts[R.i]; render(); }
       const day = Math.floor(R.day);
-      if (day !== R.painted) { R.tix = E.bookedAt(D, ctx, day); paintMap(day, R.tix); R.painted = day; }
+      if (day !== R.painted) { R.tix = E.bookedAt(D, ctx, day); R.painted = day; }
       paintPace(R.day, R.tix);
       R.raf = requestAnimationFrame(tick);
     };
@@ -317,7 +316,6 @@ document.addEventListener('click', ev => {
   else if (act === 'focus') ui.focus = (arg[0] === '_' || ui.focus === arg) ? null : arg;
   else if (act === 'rev') ui.revTab = arg;
   else if (act === 'voyq') ui.voyQ = arg;
-  else if (act === 'map') ui.mapMode = arg;
   else if (act === 'win') ctx.window = arg;
   else if (act === 'flags') ui.flagsOpen = !ui.flagsOpen;
   else if (act === 'gloss') ui.glossOpen = !ui.glossOpen;

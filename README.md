@@ -55,10 +55,9 @@ every view recomputes.
 - **Flip an adjustment.** Barter revenue, cruise-to-cruise transfers, non-revenue guests and voyages,
   and proration are handled inconsistently from slide to slide in a deck. Here each is one switch
   applied to every view at once.
-- **Press Replay on the Pace tab** and watch the fleet fill map: one cell per voyage, by ship and sail
-  date, shaded by share of target booked. The as-of line glides forward day by day through the last
-  twelve closes while the book fills in behind it, and the booking pace line beneath draws itself
-  continuously alongside. The tables and figures update as each month-end passes. Switch the map to Pace to see which voyages are ahead of or behind the booking curve.
+- **Press Replay on the Pace tab** and watch the booking pace line draw itself day by day through the
+  last twelve closes, with the gap to the prior year tracked in the strip beneath it. The tables and
+  figures update as each month-end passes.
 - **Watch the dots in the cash river.** Each one is a fixed amount of cash, so a stream gains or loses
   dots as the cockpit moves it.
 - **Open a card's Table view** to see the numbers behind any chart, or **CSV** to download them.
