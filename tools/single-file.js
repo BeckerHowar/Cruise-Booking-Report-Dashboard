@@ -2,7 +2,8 @@
    page and supply their own document shell. Scripts are inlined, and the controls that
    need a real browser window (print, copy link, file download) are hidden.
 
-   node tools/single-file.js <output.html>                                              */
+   node tools/single-file.js <output.html>                fragment for a host with its own shell
+   node tools/single-file.js <output.html> --standalone   one complete file to open or send      */
 'use strict';
 const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..'), out = process.argv[2];
@@ -30,6 +31,11 @@ const extra = '<style>\n' +
   '  #cockpit { margin-bottom: env(safe-area-inset-bottom, 0px); }\n' +
   '</style>';
 
-const page = '<title>Cruise Booking Report Dashboard</title>\n' + themeScript + '\n' + style + '\n' + extra + '\n' + body.trim() + '\n';
+// --standalone writes a complete document that opens straight from disk in any browser, with every control left in.
+const standalone = process.argv.includes('--standalone');
+const page = standalone
+  ? '<!doctype html>\n<html lang="en" data-theme="light">\n<head>\n<meta charset="utf-8">\n<meta name="robots" content="noindex, nofollow, noarchive">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Cruise Booking Report Dashboard</title>\n' + themeScript + '\n' + style + '\n</head>\n<body>\n' + body.trim() + '\n</body>\n</html>\n'
+  : '<title>Cruise Booking Report Dashboard</title>\n' + themeScript + '\n' + style + '\n' + extra + '\n' + body.trim() + '\n';
 fs.writeFileSync(out, page);
 console.log('wrote ' + out + ' · ' + scripts + ' scripts inlined · ' + Math.round(page.length / 1024) + ' KB');
