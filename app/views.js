@@ -303,20 +303,20 @@ function sinceCard(D, ctx) {
     (m.down.length ? 'Lost ground: ' + m.down.map(mv).join(', ') + '.' : 'No unsailed voyage lost ground in the month.') + '</div>');
 }
 
-// `layout` is given only where the card offers the choice: overlay, side or stack.
+// `layout` is given only where the card offers the choice: overlay, bars, side or stack.
 function paceCard(D, ctx, year, num, id, wide, layout) {
   const cv = E.curves(D, ctx, year), labels = H.months(cv.startMi, cv.startMi + cv.N - 1).map(U.miLabel), tgt = E.targetLabel(D, year);
   const has = arr => arr.some(v => v != null), legend = [{ name: year + ' sailings', color: 'var(--c1)' }];
   const split = wide && (layout === 'side' || layout === 'stack');
   if (has(cv.stly.pct)) legend.push({ name: (year - 1) + ' sailings, a year earlier', color: 'var(--c2)' });
-  if (has(cv.y2.pct)) legend.push({ name: (year - 2) + ' sailings, two years earlier', color: 'var(--c8)', dash: 1 });
+  if (has(cv.y2.pct)) legend.push({ name: (year - 2) + ' sailings, two years earlier', color: 'var(--c8)', dash: layout === 'bars' ? 0 : 1 });
   return H.card(id, num, year + ' booking pace', 'Cumulative booked revenue as a share of ' + tgt + ' · ' + H.shipName(D, ctx) +
     (cv.gap == null ? '' : ' · <span class="' + H.tone(cv.gap, true, 0.0005) + '">' + U.pp(cv.gap) + '</span> against ' + (year - 1) + ' at the same point'),
     H.body(C.pace({ labels, cy: cv.cy.pct, stly: cv.stly.pct, y2: cv.y2.pct, at: cv.at, year, denom: cv.cy.denom, start: cv.startMi, wide, layout })) +
     (split ? '<div class="foot-note">One panel for each sailing year, all on the same scale and lined up at the same point in the booking cycle. ' +
       'The dotted vertical line is the as-of date, and the same point a year and two years earlier; the faded line past it is how that year went on to finish. ' +
       'The dashed blue line carries ' + year + '’s current level across the earlier years.</div>' : C.legend(legend)),
-    layout == null ? '' : H.tabs('pacelay', [['overlay', 'Overlaid'], ['side', 'Side by side'], ['stack', 'Stacked']], split ? layout : 'overlay', 'How the three years are laid out'));
+    layout == null ? '' : H.tabs('pacelay', [['overlay', 'Lines'], ['bars', 'Bars'], ['side', 'Side by side'], ['stack', 'Stacked']], split || layout === 'bars' ? layout : 'overlay', 'How the three years are drawn'));
 }
 V.paceCard = paceCard;
 

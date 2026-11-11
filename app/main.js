@@ -2,7 +2,7 @@
    and calls render(), which asks the views for fresh HTML. */
 (function () {
 'use strict';
-const { util: U, engine: E, views: V } = CBR;
+const { util: U, engine: E, views: V, charts: C } = CBR;
 const $ = id => document.getElementById(id);
 const store = {
   get(k) { try { return localStorage.getItem('cbr.' + k); } catch (e) { return null; } },
@@ -25,7 +25,7 @@ const isNarrow = () => window.innerWidth < 720;
 const ui = { view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null,
              source: 'simulated', sigma: { state: 'idle', message: '' }, still: reduced, narrow: isNarrow(),
              sort: {}, filter: {}, flagsOpen: false, glossOpen: false,
-             paceLayout: ['side', 'stack'].includes(store.get('paceLayout')) ? store.get('paceLayout') : 'overlay', cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
+             paceLayout: ['bars', 'side', 'stack'].includes(store.get('paceLayout')) ? store.get('paceLayout') : 'overlay', cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
 try { const s = JSON.parse(store.get('savedScenario') || 'null'); if (s && typeof s.vol === 'number') ui.saved = s; } catch (e) { /* unreadable */ }
 
 /* ---------- shareable link: the whole state lives in the address ---------- */
@@ -229,42 +229,63 @@ function stopReplay() {
   cancelAnimationFrame(replay.raf); clearInterval(replay.timer);
   replay = null;
 }
-// The booking pace line: its tip, end dot and "as of" marker move to where the given moment falls.
-// `at` is a fractional day, so the tip slides between days; the height uses the book at the whole day.
+// The booking pace chart, moved to where the given moment falls: the line's tip, end dot and "as of"
+// marker, the bar or gap bar for the month in progress, and each earlier year's own line in the
+// split layouts. `at` is a fractional day, so everything slides between days; heights use the
+// book at the whole day.
 function paintPace(at, tix) {
   document.querySelectorAll('#view svg.livepace').forEach(svg => {
-    const d = svg.dataset, denom = +d.denom, line = svg.querySelector('.live-line');
-    if (!denom || !line) return;
+    const d = svg.dataset, denom = +d.denom, n = +d.n;
+    if (!denom) return;
     let booked = 0;
     for (const v of D.voyages) if (ctx.ship < 0 || v.ship === ctx.ship) booked += tix[v.i] * E.yearShare(v, +d.year, ctx.flags.prorate);
     // month-end points sit on whole indices; a day part-way through a month sits that far towards the next
     const m = U.mi(Math.floor(at)), first = U.miStart(m), pos = (m - d.start - 1) + (at - first + 1) / (U.miEnd(m) - first + 1);
-    if (pos < 0 || pos > d.n - 1) return;
-    const x = +d.pl + pos / (d.n - 1) * d.iw;
-    const y = +d.pt + (1 - (U.clamp(booked / denom, +d.lo, +d.hi) - d.lo) / (d.hi - d.lo)) * d.ih;
-    line.setAttribute('d', line.dataset.base + 'L' + x.toFixed(1) + ' ' + y.toFixed(1));
-    const dot = svg.querySelector('.live-dot'), mark = svg.querySelector('.live-mark');
+    if (pos < 0 || pos > n - 1) return;
+    const share = booked / denom, i0 = Math.floor(pos), i1 = Math.min(i0 + 1, n - 1), part = pos - i0;
+    const yOf = (v, pt) => pt + (1 - (U.clamp(v, +d.lo, +d.hi) - d.lo) / (d.hi - d.lo)) * d.ih;
+    const x = +d.pl + pos / (n - 1) * d.iw, y = yOf(share, +d.pt);
+    const line = svg.querySelector('.live-line'), dot = svg.querySelector('.live-dot'), mark = svg.querySelector('.live-mark');
+    if (line) line.setAttribute('d', line.dataset.base + 'L' + x.toFixed(1) + ' ' + y.toFixed(1));
     if (dot) { dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1)); }
     if (mark) mark.setAttribute('transform', 'translate(' + (x - mark.dataset.x).toFixed(1) + ',0)');
-    // split layouts: the figure beside the tip, and the level carried across the earlier years' panels
-    const val = svg.querySelector('.live-val');
-    if (val) {
-      val.setAttribute('x', (x + (val.getAttribute('text-anchor') === 'start' ? 9 : -9)).toFixed(1));
-      val.setAttribute('y', Math.max(y - 9, +d.pt + 11).toFixed(1));
-      val.textContent = U.pct(booked / denom);
+    const place = (el, px, py, pt) => {
+      el.setAttribute('x', (px + (el.getAttribute('text-anchor') === 'start' ? 9 : -9)).toFixed(1));
+      el.setAttribute('y', Math.max(py - 9, pt + 11).toFixed(1));
+    };
+
+    // bars: the bar for the month in progress grows where that month's bar will stand
+    const lb = svg.querySelector('.live-bar');
+    if (lb) {
+      lb.setAttribute('visibility', part > 1e-6 ? 'visible' : 'hidden');
+      lb.setAttribute('x', (+d.pl + i1 / (n - 1) * d.iw + +d.boff).toFixed(1));
+      lb.setAttribute('y', y.toFixed(1)); lb.setAttribute('height', Math.max(0, +d.pt + +d.ih - y).toFixed(1));
     }
+
+    // split layouts: the figure beside the tip, the level carried across, and each earlier year drawn on to the same point
+    const val = svg.querySelector('.live-val');
+    if (val) { place(val, x, y, +d.pt); val.textContent = U.pct(share); }
     svg.querySelectorAll('.live-guide').forEach(g => g.setAttribute('transform', 'translate(0,' + (y - d.basey).toFixed(1) + ')'));
+    svg.querySelectorAll('.live-prior').forEach(g => {
+      const vals = g._vals || (g._vals = g.dataset.vals.split(',').map(t => t === '' ? null : +t)), a = vals[i0], b = vals[i1];
+      if (a == null || b == null) return;
+      const pv = a + (b - a) * part, pt = +g.dataset.pt, px = +g.dataset.pl + pos / (n - 1) * d.iw, py = yOf(pv, pt);
+      const pl = g.querySelector('.pl'), pd = g.querySelector('.pd'), lab = g.querySelector('.pv'), note = g.querySelector('.pn');
+      if (pl) pl.setAttribute('d', pl.dataset.base + 'L' + px.toFixed(1) + ' ' + py.toFixed(1));
+      if (pd) { pd.setAttribute('cx', px.toFixed(1)); pd.setAttribute('cy', py.toFixed(1)); }
+      if (lab) { place(lab, px, py, pt); lab.textContent = U.pct(pv); }
+      if (note) { const [text, fill] = C.paceNote(+d.year, share - pv); note.textContent = text; note.setAttribute('fill', fill); }
+    });
 
     // the gap strip: a bar for the month in progress, measured against the prior-year line at this exact point
     const bar = svg.querySelector('.live-gap'), lab = svg.querySelector('.live-gaplabel'), now = svg.querySelector('.gap-now');
     if (!bar) return;
-    const ref = svg._ref || (svg._ref = d.ref.split(',').map(t => t === '' ? null : +t));
-    const i0 = Math.floor(pos), i1 = Math.min(i0 + 1, d.n - 1), r0 = ref[i0], r1 = ref[i1];
-    const show = r0 != null && r1 != null && pos - i0 > 1e-6;
+    const ref = svg._ref || (svg._ref = d.ref.split(',').map(t => t === '' ? null : +t)), r0 = ref[i0], r1 = ref[i1];
+    const show = r0 != null && r1 != null && part > 1e-6;
     bar.setAttribute('visibility', show ? 'visible' : 'hidden'); lab.setAttribute('visibility', show ? 'visible' : 'hidden');
     if (now) now.setAttribute('visibility', show ? 'hidden' : 'visible');
     if (!show) return;
-    const gap = booked / denom - (r0 + (r1 - r0) * (pos - i0)), h = Math.max(1, Math.min(Math.abs(gap), +d.gm) * d.gk), cx = +d.gpl + i1 / (d.n - 1) * d.giw;
+    const gap = share - (r0 + (r1 - r0) * part), h = Math.max(1, Math.min(Math.abs(gap), +d.gm) * d.gk), cx = +d.gpl + i1 / (n - 1) * d.giw;
     bar.setAttribute('x', (cx - d.bw / 2).toFixed(1)); bar.setAttribute('y', (gap >= 0 ? d.gy0 - h : +d.gy0).toFixed(1)); bar.setAttribute('height', h.toFixed(1));
     bar.setAttribute('fill', gap >= 0 ? 'var(--good)' : 'var(--crit)');
     lab.setAttribute('x', cx.toFixed(1)); lab.setAttribute('y', (gap >= 0 ? d.gy0 - h - 5 : +d.gy0 + h + 13).toFixed(1));

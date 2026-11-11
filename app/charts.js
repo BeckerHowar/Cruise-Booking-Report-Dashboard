@@ -89,8 +89,8 @@ C.lines = function (o) {
    on a 0-100% scale, so the lines alone cannot show who is ahead. Each
    year gets its own colour, and a strip underneath plots the difference
    itself: points ahead of or behind the prior year at the same calendar
-   point. Three layouts: every year on one plot, or one panel a year set
-   side by side or stacked, all on one scale. The current-year line, its
+   point. Four layouts: every year on one plot as lines or as bars, or one
+   panel a year set side by side or stacked, all on one scale. The current-year line, its
    tip, the marker and the gap bar for the month in progress are tagged so
    replay can move them in place.
    o = { labels, cy, stly, y2, at, year, denom, start, wide, layout }
@@ -99,7 +99,12 @@ const PACE_GAP_H = 72;
 const paceAttrs = (o, N, g) => ' class="livepace" data-year="' + o.year + '" data-denom="' + o.denom + '" data-start="' + o.start + '" data-n="' + N +
   '" data-pl="' + g.pl + '" data-iw="' + g.iw + '" data-pt="' + g.pt + '" data-ih="' + g.ih + '" data-lo="0" data-hi="' + g.hi + '" data-basey="' + g.basey +
   '" data-gpl="' + g.gpl + '" data-giw="' + g.giw + '" data-ref="' + o.stly.map(v => v == null ? '' : v.toFixed(6)).join(',') +
-  '" data-gy0="' + g.st.gy0 + '" data-gk="' + g.st.gk + '" data-gm="' + g.st.gm + '" data-bw="' + g.st.bw.toFixed(1) + '"';
+  '" data-gy0="' + g.st.gy0 + '" data-gk="' + g.st.gk + '" data-gm="' + g.st.gm + '" data-bw="' + g.st.bw.toFixed(1) +
+  '" data-boff="' + (g.boff || 0).toFixed(2) + '"';
+
+// How the year in focus stands against an earlier year at the same point: the words, and their colour.
+C.paceNote = (year, d) => Math.abs(d) < 0.0005 ? [year + ' is level with it', 'var(--ink-2)']
+  : [year + ' is ' + (Math.abs(d) * 100).toFixed(1) + ' pp ' + (d > 0 ? 'ahead' : 'behind'), d > 0 ? 'var(--good-text)' : 'var(--neg)'];
 
 // The gap strip: one bar a month between x0 and x1, with its zero line at the middle of the band starting at sT.
 function paceStrip(o, gaps, x, x0, x1, sT, step) {
@@ -190,14 +195,11 @@ function paceSplit(o, W, N, gaps, hasGap, ticks, hi) {
     const v = s.vals[at];
     let note = '', tone = 'var(--ink-2)';
     if (s.k === 0) { if (now != null) note = U.pct(now) + ' of target booked'; }
-    else if (v != null && now != null) {
-      const d = now - v;
-      if (Math.abs(d) < 0.0005) note = o.year + ' is level with it';
-      else { note = o.year + ' is ' + (Math.abs(d) * 100).toFixed(1) + ' pp ' + (d > 0 ? 'ahead' : 'behind'); tone = d > 0 ? 'var(--good-text)' : 'var(--neg)'; }
-    }
+    else if (v != null && now != null) [note, tone] = C.paceNote(o.year, now - v);
     p += '<rect x="' + (x0 + pL).toFixed(1) + '" y="' + (y0 + 13) + '" width="16" height="4" rx="2" fill="' + s.color + '"/>' +
       '<text x="' + (x0 + pL + 22).toFixed(1) + '" y="' + (y0 + 19) + '" font-size="12.5" font-weight="650" fill="var(--ink)">' + yr + ' sailings</text>';
-    if (note) p += '<text x="' + right.toFixed(1) + '" y="' + (y0 + 19) + '" text-anchor="end" font-size="' + FS + '" font-weight="650" fill="' + tone + '">' + note + '</text>';
+    const noteSvg = note ? '<text class="pn" x="' + right.toFixed(1) + '" y="' + (y0 + 19) + '" text-anchor="end" font-size="' + FS + '" font-weight="650" fill="' + tone + '">' + note + '</text>' : '';
+    if (s.k === 0) p += noteSvg;
 
     // the focus year's current level, carried across the earlier years
     if (s.k > 0 && now != null) {
@@ -217,16 +219,18 @@ function paceSplit(o, W, N, gaps, hasGap, ticks, hi) {
       live = { pl: x0 + pL, pt: top, basey: now != null ? y(now) : 0, mx: x(at) };
     } else {
       const a = seg(0, at), b = seg(at, N - 1);
+      p += '<g class="live-prior" data-pl="' + (x0 + pL).toFixed(1) + '" data-pt="' + top + '" data-vals="' + s.vals.map(q => q == null ? '' : q.toFixed(6)).join(',') + '">' + noteSvg;
       if (b.d) p += '<path d="' + b.d + '" fill="none" stroke="' + s.color + '" stroke-width="1.6" opacity="0.45" stroke-linejoin="round"/>';
-      if (a.d) p += '<path d="' + a.d + '" fill="none" stroke="' + s.color + '" stroke-width="' + s.w + '" stroke-linejoin="round"/>';
-      if (v != null) p += '<circle cx="' + x(at).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3.8" fill="' + s.color + '" stroke="var(--chart-surface)" stroke-width="2"/>';
+      if (a.d) p += '<path class="pl" data-base="' + a.d + '" d="' + a.d + '" fill="none" stroke="' + s.color + '" stroke-width="' + s.w + '" stroke-linejoin="round"/>';
+      if (v != null) p += '<circle class="pd" cx="' + x(at).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3.8" fill="' + s.color + '" stroke="var(--chart-surface)" stroke-width="2"/>';
     }
     const lv = li >= 0 ? s.vals[li] : null;
     if (lv != null) {
       const flip = x(li) - (x0 + pL) < 52;
-      p += '<text' + (s.k === 0 ? ' class="live-val"' : '') + ' x="' + (x(li) + (flip ? 9 : -9)).toFixed(1) + '" y="' + Math.max(y(lv) - 9, top + 11).toFixed(1) + '" text-anchor="' + (flip ? 'start' : 'end') +
+      p += '<text class="' + (s.k === 0 ? 'live-val' : 'pv') + '" x="' + (x(li) + (flip ? 9 : -9)).toFixed(1) + '" y="' + Math.max(y(lv) - 9, top + 11).toFixed(1) + '" text-anchor="' + (flip ? 'start' : 'end') +
         '" font-size="12.5" font-weight="700" fill="var(--ink)"' + halo + '>' + U.pct(lv) + '</text>';
     }
+    if (s.k > 0) p += '</g>';
 
     for (let i = 0; i < N; i++) {
       if (s.vals[i] == null) continue;
@@ -252,6 +256,37 @@ function paceSplit(o, W, N, gaps, hasGap, ticks, hi) {
     paceAttrs(o, N, { pl: live.pl, iw, pt: live.pt, ih, hi, basey: live.basey, gpl: sx0, giw: sx1 - sx0, st }), true);
 }
 
+// The three years as bars side by side at each month-end, oldest on the left.
+function paceBars(o, W, N, gaps, hasGap, ticks, hi) {
+  const pL = 58, pR = 16, pT = 16, ih = 236, full = W - pL - pR, step = full / N, x0 = pL + step / 2, iw = full - step;
+  const sT = pT + ih + 40, H = hasGap ? sT + PACE_GAP_H + 32 : pT + ih + 30, base = pT + ih;
+  const x = i => x0 + i / (N - 1) * iw, y = v => pT + (1 - v / hi) * ih, gw = step * 0.8, bwid = gw / 3;
+  let g = grid(ticks, y, pL, W - pR, C.axisPct), bars = '', hits = '';
+  for (let i = 0; i < N; i += 3) g += xLabel(x(i), H, o.labels[i]);
+  const series = [{ vals: o.y2, color: 'var(--c8)', name: (o.year - 2) + ', two years earlier' }, { vals: o.stly, color: 'var(--c2)', name: (o.year - 1) + ', a year earlier' },
+                  { vals: o.cy, color: 'var(--c1)', name: o.year + ' sailings' }];
+  const st = hasGap ? paceStrip(o, gaps, x, pL, W - pR, sT, step) : NO_STRIP, bottom = hasGap ? sT + PACE_GAP_H : base;
+  for (let i = 0; i < N; i++) {
+    const rows = [];
+    series.forEach((s, k) => {
+      const v = s.vals[i];
+      if (v == null) return;
+      const h = Math.max(1, v / hi * ih);
+      bars += '<rect x="' + (x(i) - gw / 2 + k * bwid + 0.5).toFixed(1) + '" y="' + (base - h).toFixed(1) + '" width="' + (bwid - 1).toFixed(1) + '" height="' + h.toFixed(1) + '" fill="' + s.color + '"' +
+        (k < 2 && i > o.at ? ' opacity="0.4"' : '') + '/>';
+      rows.unshift(s.name + ': ' + U.pct(v));
+    });
+    if (gaps[i] != null) rows.push('Gap to ' + (o.year - 1) + ': ' + U.pp(gaps[i], 1));
+    if (rows.length) hits += '<rect x="' + (x(i) - step / 2).toFixed(1) + '" y="' + pT + '" width="' + step.toFixed(1) + '" height="' + (bottom - pT) + '" fill="transparent"' + tip(o.labels[i] + '\n' + rows.join('\n')) + '/>';
+  }
+  bars += '<rect class="live-bar" visibility="hidden" x="0" y="' + base + '" width="' + (bwid - 1).toFixed(1) + '" height="0" fill="var(--c1)"/>';
+  const mx = x(o.at) + step / 2;
+  const mark = '<g class="live-mark" data-x="' + x(o.at).toFixed(1) + '"><line x1="' + mx.toFixed(1) + '" x2="' + mx.toFixed(1) + '" y1="' + pT + '" y2="' + bottom + '" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="2 3" opacity="0.85"/>' +
+    '<text x="' + (mx - 5).toFixed(1) + '" y="' + (pT + 11) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)" stroke="var(--chart-surface)" stroke-width="3.5" paint-order="stroke" stroke-linejoin="round">as of</text></g>';
+  return frame(W, H, o.year + ' booking curve against the two prior years as bars, with the gap to the prior year', g + bars + st.svg + mark + hits,
+    paceAttrs(o, N, { pl: x0, iw, pt: pT, ih, hi, basey: 0, gpl: x0, giw: iw, st, boff: -gw / 2 + 2 * bwid + 0.5 }));
+}
+
 C.pace = function (o) {
   const W = o.wide ? 1120 : 640, N = o.labels.length;
   const gaps = o.cy.map((v, i) => (v != null && o.stly[i] != null && i <= o.at) ? v - o.stly[i] : null), hasGap = gaps.some(v => v != null);
@@ -261,7 +296,7 @@ C.pace = function (o) {
   const ticks = hi <= 1.12 ? [0, 0.25, 0.5, 0.75, 1] : niceTicks(0, hi, 4);
   hi = hi <= 1.12 ? Math.ceil(hi * 20 - 1e-9) / 20 : ticks[ticks.length - 1];
   const split = o.wide && (o.layout === 'side' || o.layout === 'stack');
-  return (split ? paceSplit : paceOverlay)(o, W, N, gaps, hasGap, ticks, hi);
+  return (split ? paceSplit : (o.wide && o.layout === 'bars') ? paceBars : paceOverlay)(o, W, N, gaps, hasGap, ticks, hi);
 };
 
 /* Stacked bars. o = { labels, series:[{name,color,values}], pct, yFmt, tipFmt, line:{name,values,fmt,color}, fadeFrom, width, height } */
