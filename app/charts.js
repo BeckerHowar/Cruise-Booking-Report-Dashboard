@@ -27,9 +27,10 @@ C.axisMoney = v => {
 };
 C.axisPct = v => Math.round(v * 100) + '%';
 
-const frame = (W, H, label, inner, attrs) =>
+// `bare` leaves the background off, for a chart that draws its own panels.
+const frame = (W, H, label, inner, attrs, bare) =>
   '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img"' + (attrs || '') + ' aria-label="' + U.esc(label || 'chart') + '">' +
-  '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="var(--chart-surface)" rx="6"/>' + inner + '</svg>';
+  (bare ? '' : '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="var(--chart-surface)" rx="6"/>') + inner + '</svg>';
 
 function grid(ticks, y, x0, x1, fmt) {
   let g = '';
@@ -88,19 +89,50 @@ C.lines = function (o) {
    on a 0-100% scale, so the lines alone cannot show who is ahead. Each
    year gets its own colour, and a strip underneath plots the difference
    itself: points ahead of or behind the prior year at the same calendar
-   point. The current-year line, its tip, the marker and the gap bar for
-   the month in progress are tagged so replay can move them in place.
-   o = { labels, cy, stly, y2, at, year, denom, start, wide }
+   point. Three layouts: every year on one plot, or one panel a year set
+   side by side or stacked, all on one scale. The current-year line, its
+   tip, the marker and the gap bar for the month in progress are tagged so
+   replay can move them in place.
+   o = { labels, cy, stly, y2, at, year, denom, start, wide, layout }
    --------------------------------------------------------------------- */
-C.pace = function (o) {
-  const W = o.wide ? 1120 : 640, pL = 58, pR = 16, pT = 16, ih = o.wide ? 236 : 176, N = o.labels.length;
-  const gaps = o.cy.map((v, i) => (v != null && o.stly[i] != null && i <= o.at) ? v - o.stly[i] : null), hasGap = gaps.some(v => v != null);
-  const sT = pT + ih + 40, sH = 72, H = hasGap ? sT + sH + 32 : pT + ih + 30, iw = W - pL - pR;
-  let hi = 1;
-  for (const arr of [o.cy, o.stly, o.y2]) for (const v of arr) if (v != null && v > hi) hi = v;
-  const ticks = niceTicks(0, hi, 4), lo = 0;
-  hi = ticks[ticks.length - 1];
-  const x = i => pL + i / (N - 1) * iw, y = v => pT + (1 - (v - lo) / (hi - lo)) * ih, step = iw / (N - 1);
+const PACE_GAP_H = 72;
+const paceAttrs = (o, N, g) => ' class="livepace" data-year="' + o.year + '" data-denom="' + o.denom + '" data-start="' + o.start + '" data-n="' + N +
+  '" data-pl="' + g.pl + '" data-iw="' + g.iw + '" data-pt="' + g.pt + '" data-ih="' + g.ih + '" data-lo="0" data-hi="' + g.hi + '" data-basey="' + g.basey +
+  '" data-gpl="' + g.gpl + '" data-giw="' + g.giw + '" data-ref="' + o.stly.map(v => v == null ? '' : v.toFixed(6)).join(',') +
+  '" data-gy0="' + g.st.gy0 + '" data-gk="' + g.st.gk + '" data-gm="' + g.st.gm + '" data-bw="' + g.st.bw.toFixed(1) + '"';
+
+// The gap strip: one bar a month between x0 and x1, with its zero line at the middle of the band starting at sT.
+function paceStrip(o, gaps, x, x0, x1, sT, step) {
+  const sH = PACE_GAP_H, bw = Math.min(22, step * 0.62);
+  let gm = 0.02;
+  for (const v of gaps) if (v != null) gm = Math.max(gm, Math.abs(v));
+  gm = Math.ceil(gm * 100 - 1e-9) / 100;
+  const gy0 = sT + sH / 2, gk = (sH / 2) / gm;
+  let s = '<text x="' + x0 + '" y="' + (sT - 12) + '" font-size="' + FS + '" font-weight="650" fill="var(--ink)">Gap to ' + (o.year - 1) + ' sailings at the same calendar point</text>' +
+    '<text x="' + x1 + '" y="' + (sT - 12) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)">points of target · green ahead, red behind</text>';
+  for (const [v, lab] of [[gm, '+' + Math.round(gm * 100) + ' pp'], [0, '0'], [-gm, '−' + Math.round(gm * 100) + ' pp']]) {
+    const yy = gy0 - v * gk;
+    s += '<line x1="' + x0 + '" x2="' + x1 + '" y1="' + yy + '" y2="' + yy + '" stroke="' + (v === 0 ? 'var(--axis)' : 'var(--grid)') + '" stroke-width="' + (v === 0 ? 1.25 : 1) + '"/>' +
+      '<text x="' + (x0 - 7) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)">' + lab + '</text>';
+  }
+  gaps.forEach((v, i) => {
+    if (v == null) return;
+    const h = Math.max(1, Math.abs(v) * gk);
+    s += '<rect x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + (v >= 0 ? gy0 - h : gy0).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="' + (v >= 0 ? 'var(--good)' : 'var(--crit)') + '"/>';
+  });
+  const now = gaps[o.at];
+  if (now != null) s += '<text class="gap-now" x="' + x(o.at) + '" y="' + (now >= 0 ? gy0 - Math.abs(now) * gk - 5 : gy0 + Math.abs(now) * gk + 13).toFixed(1) +
+    '" text-anchor="middle" font-size="12" font-weight="700" fill="' + (now >= 0 ? 'var(--good-text)' : 'var(--neg)') + '">' + U.pp(now, 1) + '</text>';
+  s += '<rect class="live-gap" visibility="hidden" x="0" y="0" width="' + bw.toFixed(1) + '" height="0" rx="1.5"/>' +
+    '<text class="live-gaplabel" visibility="hidden" text-anchor="middle" font-size="12" font-weight="700"></text>';
+  return { svg: s, gy0, gk, gm, bw };
+}
+const NO_STRIP = { svg: '', gy0: 0, gk: 0, gm: 0.02, bw: 0 };
+
+function paceOverlay(o, W, N, gaps, hasGap, ticks, hi) {
+  const pL = 58, pR = 16, pT = 16, ih = o.wide ? 236 : 176;
+  const sT = pT + ih + 40, H = hasGap ? sT + PACE_GAP_H + 32 : pT + ih + 30, iw = W - pL - pR;
+  const x = i => pL + i / (N - 1) * iw, y = v => pT + (1 - v / hi) * ih, step = iw / (N - 1);
   let g = grid(ticks, y, pL, W - pR, C.axisPct);
   for (let i = 0; i < N; i += (o.wide ? 3 : 6)) g += xLabel(x(i), H, o.labels[i]);
 
@@ -112,33 +144,8 @@ C.pace = function (o) {
   if (p0.d) marks += '<path class="live-line" data-base="' + p0.d + '" d="' + p0.d + '" fill="none" stroke="var(--c1)" stroke-width="3" stroke-linejoin="round"/>' +
     '<circle class="live-dot" cx="' + x(p0.last) + '" cy="' + y(o.cy[p0.last]) + '" r="4.2" fill="var(--c1)" stroke="var(--chart-surface)" stroke-width="2"/>';
 
-  // the gap strip
-  let strip = '', gm = 0.02, gy0 = 0, gk = 0;
-  const bw = Math.min(22, step * 0.62);
-  if (hasGap) {
-    for (const v of gaps) if (v != null) gm = Math.max(gm, Math.abs(v));
-    gm = Math.ceil(gm * 100 - 1e-9) / 100;
-    gy0 = sT + sH / 2; gk = (sH / 2) / gm;
-    strip += '<text x="' + pL + '" y="' + (sT - 12) + '" font-size="' + FS + '" font-weight="650" fill="var(--ink)">Gap to ' + (o.year - 1) + ' sailings at the same calendar point</text>' +
-      '<text x="' + (W - pR) + '" y="' + (sT - 12) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)">points of target · green ahead, red behind</text>';
-    for (const [v, lab] of [[gm, '+' + Math.round(gm * 100) + ' pp'], [0, '0'], [-gm, '−' + Math.round(gm * 100) + ' pp']]) {
-      const yy = gy0 - v * gk;
-      strip += '<line x1="' + pL + '" x2="' + (W - pR) + '" y1="' + yy + '" y2="' + yy + '" stroke="' + (v === 0 ? 'var(--axis)' : 'var(--grid)') + '" stroke-width="' + (v === 0 ? 1.25 : 1) + '"/>' +
-        '<text x="' + (pL - 7) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)">' + lab + '</text>';
-    }
-    gaps.forEach((v, i) => {
-      if (v == null) return;
-      const h = Math.max(1, Math.abs(v) * gk);
-      strip += '<rect x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + (v >= 0 ? gy0 - h : gy0).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="' + (v >= 0 ? 'var(--good)' : 'var(--crit)') + '"/>';
-    });
-    const now = gaps[o.at];
-    if (now != null) strip += '<text class="gap-now" x="' + x(o.at) + '" y="' + (now >= 0 ? gy0 - Math.abs(now) * gk - 5 : gy0 + Math.abs(now) * gk + 13).toFixed(1) +
-      '" text-anchor="middle" font-size="12" font-weight="700" fill="' + (now >= 0 ? 'var(--good-text)' : 'var(--neg)') + '">' + U.pp(now, 1) + '</text>';
-    strip += '<rect class="live-gap" visibility="hidden" x="0" y="0" width="' + bw.toFixed(1) + '" height="0" rx="1.5"/>' +
-      '<text class="live-gaplabel" visibility="hidden" text-anchor="middle" font-size="12" font-weight="700"></text>';
-  }
-
-  const mx = x(o.at), bottom = hasGap ? sT + sH : pT + ih;
+  const st = hasGap ? paceStrip(o, gaps, x, pL, W - pR, sT, step) : NO_STRIP;
+  const mx = x(o.at), bottom = hasGap ? sT + PACE_GAP_H : pT + ih;
   const mark = '<g class="live-mark" data-x="' + mx.toFixed(1) + '"><line x1="' + mx + '" x2="' + mx + '" y1="' + pT + '" y2="' + bottom + '" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="2 3" opacity="0.85"/>' +
     '<text x="' + (mx - 5) + '" y="' + (pT + 11) + '" text-anchor="end" font-size="' + FS + '" fill="var(--ink-2)">as of</text></g>';
 
@@ -151,10 +158,110 @@ C.pace = function (o) {
     if (gaps[i] != null) rows.push('Gap to ' + (o.year - 1) + ': ' + U.pp(gaps[i], 1));
     if (rows.length) hits += '<rect x="' + (x(i) - step / 2) + '" y="' + pT + '" width="' + step + '" height="' + (bottom - pT) + '" fill="transparent"' + tip(o.labels[i] + '\n' + rows.join('\n')) + '/>';
   }
-  return frame(W, H, o.year + ' booking curve against the two prior years, with the gap to the prior year', g + marks + strip + mark + hits,
-    ' class="livepace" data-year="' + o.year + '" data-denom="' + o.denom + '" data-start="' + o.start + '" data-n="' + N + '" data-pl="' + pL + '" data-iw="' + iw +
-    '" data-pt="' + pT + '" data-ih="' + ih + '" data-lo="' + lo + '" data-hi="' + hi + '" data-ref="' + o.stly.map(v => v == null ? '' : v.toFixed(6)).join(',') +
-    '" data-gy0="' + gy0 + '" data-gk="' + gk + '" data-gm="' + gm + '" data-bw="' + bw.toFixed(1) + '"');
+  return frame(W, H, o.year + ' booking curve against the two prior years, with the gap to the prior year', g + marks + st.svg + mark + hits,
+    paceAttrs(o, N, { pl: pL, iw, pt: pT, ih, hi, basey: 0, gpl: pL, giw: iw, st }));
+}
+
+// One panel a year, on one scale. Side by side reads oldest to newest; stacked puts the year in focus on top.
+function paceSplit(o, W, N, gaps, hasGap, ticks, hi) {
+  const stack = o.layout === 'stack', at = o.at, now = o.cy[at];
+  const years = [{ k: 0, vals: o.cy, color: 'var(--c1)', w: 3 }, { k: 1, vals: o.stly, color: 'var(--c2)', w: 2.4 }, { k: 2, vals: o.y2, color: 'var(--c8)', w: 2.4 }]
+    .filter(s => s.k === 0 || s.vals.some(v => v != null));
+  if (!stack) years.reverse();
+  const n = years.length, G = stack ? 14 : 24, pL = stack ? 58 : 46, pR = stack ? 16 : 14, pT = 36, pB = 26, ih = stack ? 110 : 216;
+  const pw = stack ? W : (W - (n - 1) * G) / n, ph = pT + ih + pB, iw = pw - pL - pR, every = stack ? 3 : 6;
+  const panelsH = stack ? n * ph + (n - 1) * G : ph;
+  const sx0 = 58, sx1 = W - 16, sx = i => sx0 + i / (N - 1) * (sx1 - sx0), sStep = (sx1 - sx0) / (N - 1);
+  const stripTop = panelsH + G, sT = stripTop + 34, H = hasGap ? sT + PACE_GAP_H + 32 : panelsH;
+  const halo = ' stroke="var(--chart-surface)" stroke-width="3.5" paint-order="stroke" stroke-linejoin="round"';
+  const vline = (xx, y1, y2) => '<line x1="' + xx.toFixed(1) + '" x2="' + xx.toFixed(1) + '" y1="' + y1 + '" y2="' + y2 + '" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="2 3" opacity="0.85"/>';
+  let body = '', marks = '', hits = '', live = { pl: pL, pt: pT, basey: 0, mx: 0 };
+
+  years.forEach((s, idx) => {
+    const x0 = stack ? 0 : idx * (pw + G), y0 = stack ? idx * (ph + G) : 0, yr = o.year - s.k, top = y0 + pT, right = x0 + pw - pR;
+    const x = i => x0 + pL + i / (N - 1) * iw, y = v => top + (1 - v / hi) * ih, step = iw / (N - 1);
+    let p = '<rect x="' + x0.toFixed(1) + '" y="' + y0 + '" width="' + pw.toFixed(1) + '" height="' + ph + '" rx="6" fill="var(--chart-surface)"/>' + grid(ticks, y, x0 + pL, right, C.axisPct);
+    for (let i = 0; i < N; i += every) {
+      const edge = x(i) + 22 > x0 + pw;
+      p += '<text x="' + (edge ? x0 + pw - 4 : x(i)).toFixed(1) + '" y="' + (y0 + ph - 8) + '" text-anchor="' + (edge ? 'end' : 'middle') + '" font-size="' + FS + '" fill="var(--ink-2)">' + U.miLabel(o.start + i - 12 * s.k) + '</text>';
+    }
+
+    // heading: which year this is, and how the year in focus compares at the same point
+    const v = s.vals[at];
+    let note = '', tone = 'var(--ink-2)';
+    if (s.k === 0) { if (now != null) note = U.pct(now) + ' of target booked'; }
+    else if (v != null && now != null) {
+      const d = now - v;
+      if (Math.abs(d) < 0.0005) note = o.year + ' is level with it';
+      else { note = o.year + ' is ' + (Math.abs(d) * 100).toFixed(1) + ' pp ' + (d > 0 ? 'ahead' : 'behind'); tone = d > 0 ? 'var(--good-text)' : 'var(--neg)'; }
+    }
+    p += '<rect x="' + (x0 + pL).toFixed(1) + '" y="' + (y0 + 13) + '" width="16" height="4" rx="2" fill="' + s.color + '"/>' +
+      '<text x="' + (x0 + pL + 22).toFixed(1) + '" y="' + (y0 + 19) + '" font-size="12.5" font-weight="650" fill="var(--ink)">' + yr + ' sailings</text>';
+    if (note) p += '<text x="' + right.toFixed(1) + '" y="' + (y0 + 19) + '" text-anchor="end" font-size="' + FS + '" font-weight="650" fill="' + tone + '">' + note + '</text>';
+
+    // the focus year's current level, carried across the earlier years
+    if (s.k > 0 && now != null) {
+      const gy = y(now), left = at > N * 0.6, below = !left && gy + 16 < top + ih;
+      p += '<g class="live-guide"><line x1="' + (x0 + pL).toFixed(1) + '" x2="' + right.toFixed(1) + '" y1="' + gy.toFixed(1) + '" y2="' + gy.toFixed(1) + '" stroke="var(--c1)" stroke-width="1.25" stroke-dasharray="5 4"/>' +
+        '<text x="' + (left ? x0 + pL + 5 : right - 5).toFixed(1) + '" y="' + (below ? gy + 13 : gy - 5).toFixed(1) + '" text-anchor="' + (left ? 'start' : 'end') + '" font-size="' + FS + '" fill="var(--ink-2)"' + halo + '>' + o.year + ' now</text></g>';
+    }
+    marks += vline(x(at), top, top + ih);
+
+    const seg = (a, b) => { let d = '', pen = false, last = -1; for (let i = a; i <= b; i++) { const q = s.vals[i]; if (q == null) { pen = false; continue; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(q).toFixed(1) + ' '; pen = true; last = i; } return { d, last }; };
+    let li = at;
+    if (s.k === 0) {
+      const a = seg(0, N - 1);
+      li = a.last;
+      if (a.d) p += '<path class="live-line" data-base="' + a.d + '" d="' + a.d + '" fill="none" stroke="' + s.color + '" stroke-width="' + s.w + '" stroke-linejoin="round"/>' +
+        '<circle class="live-dot" cx="' + x(li).toFixed(1) + '" cy="' + y(s.vals[li]).toFixed(1) + '" r="4.2" fill="' + s.color + '" stroke="var(--chart-surface)" stroke-width="2"/>';
+      live = { pl: x0 + pL, pt: top, basey: now != null ? y(now) : 0, mx: x(at) };
+    } else {
+      const a = seg(0, at), b = seg(at, N - 1);
+      if (b.d) p += '<path d="' + b.d + '" fill="none" stroke="' + s.color + '" stroke-width="1.6" opacity="0.45" stroke-linejoin="round"/>';
+      if (a.d) p += '<path d="' + a.d + '" fill="none" stroke="' + s.color + '" stroke-width="' + s.w + '" stroke-linejoin="round"/>';
+      if (v != null) p += '<circle cx="' + x(at).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3.8" fill="' + s.color + '" stroke="var(--chart-surface)" stroke-width="2"/>';
+    }
+    const lv = li >= 0 ? s.vals[li] : null;
+    if (lv != null) {
+      const flip = x(li) - (x0 + pL) < 52;
+      p += '<text' + (s.k === 0 ? ' class="live-val"' : '') + ' x="' + (x(li) + (flip ? 9 : -9)).toFixed(1) + '" y="' + Math.max(y(lv) - 9, top + 11).toFixed(1) + '" text-anchor="' + (flip ? 'start' : 'end') +
+        '" font-size="12.5" font-weight="700" fill="var(--ink)"' + halo + '>' + U.pct(lv) + '</text>';
+    }
+
+    for (let i = 0; i < N; i++) {
+      if (s.vals[i] == null) continue;
+      const rows = [yr + ' sailings: ' + U.pct(s.vals[i])];
+      if (s.k > 0 && i <= at && o.cy[i] != null) rows.push(o.year + ' at the same point: ' + U.pct(o.cy[i]), o.year + ' against ' + yr + ': ' + U.pp(o.cy[i] - s.vals[i], 1));
+      hits += '<rect x="' + (x(i) - step / 2).toFixed(1) + '" y="' + top + '" width="' + step.toFixed(1) + '" height="' + ih + '" fill="transparent"' + tip(U.miLabel(o.start + i - 12 * s.k) + '\n' + rows.join('\n')) + '/>';
+    }
+    body += p;
+  });
+
+  let st = NO_STRIP;
+  if (hasGap) {
+    st = paceStrip(o, gaps, sx, sx0, sx1, sT, sStep);
+    body += '<rect x="0" y="' + stripTop + '" width="' + W + '" height="' + (H - stripTop) + '" rx="6" fill="var(--chart-surface)"/>' + st.svg;
+    for (let i = 0; i < N; i += 3) body += xLabel(sx(i), H, o.labels[i]);
+    if (stack) marks += vline(sx(at), sT, sT + PACE_GAP_H);      // stacked panels share the strip's months, so one marker runs through all of them
+    gaps.forEach((gv, i) => {
+      if (gv != null) hits += '<rect x="' + (sx(i) - sStep / 2).toFixed(1) + '" y="' + sT + '" width="' + sStep.toFixed(1) + '" height="' + PACE_GAP_H + '" fill="transparent"' + tip(o.labels[i] + '\nGap to ' + (o.year - 1) + ': ' + U.pp(gv, 1)) + '/>';
+    });
+  }
+  return frame(W, H, o.year + ' booking curve and the two prior years, one panel each, with the gap to the prior year',
+    body + '<g class="live-mark" data-x="' + live.mx.toFixed(1) + '">' + marks + '</g>' + hits,
+    paceAttrs(o, N, { pl: live.pl, iw, pt: live.pt, ih, hi, basey: live.basey, gpl: sx0, giw: sx1 - sx0, st }), true);
+}
+
+C.pace = function (o) {
+  const W = o.wide ? 1120 : 640, N = o.labels.length;
+  const gaps = o.cy.map((v, i) => (v != null && o.stly[i] != null && i <= o.at) ? v - o.stly[i] : null), hasGap = gaps.some(v => v != null);
+  let hi = 1;
+  for (const arr of [o.cy, o.stly, o.y2]) for (const v of arr) if (v != null && v > hi) hi = v;
+  // a year that finishes a little over target keeps the 0-100% gridlines and gets headroom, not an axis to 150%
+  const ticks = hi <= 1.12 ? [0, 0.25, 0.5, 0.75, 1] : niceTicks(0, hi, 4);
+  hi = hi <= 1.12 ? Math.ceil(hi * 20 - 1e-9) / 20 : ticks[ticks.length - 1];
+  const split = o.wide && (o.layout === 'side' || o.layout === 'stack');
+  return (split ? paceSplit : paceOverlay)(o, W, N, gaps, hasGap, ticks, hi);
 };
 
 /* Stacked bars. o = { labels, series:[{name,color,values}], pct, yFmt, tipFmt, line:{name,values,fmt,color}, fadeFrom, width, height } */

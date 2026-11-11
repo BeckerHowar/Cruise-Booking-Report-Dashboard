@@ -99,7 +99,7 @@ V.render.pace = function (D, ctx, ui) {
     : '<div class="pad policy"><p>There is not enough sailed history before this close to test the outlook.</p></div>';
   const better = bt.filter(r => r.absOut <= r.absTgt).length;
 
-  return V.paceCard(D, ctx, y, '01', 'pace', true) +
+  return V.paceCard(D, ctx, y, '01', 'pace', true, ui.paceLayout || 'overlay') +
     H.card('curvet', '02', 'Booking curve table', y + ' sailings by quarter against ' + tgt + ' and the two prior years · ' + H.shipName(D, ctx), curveTable +
       '<div class="foot-note">A completed prior year is measured against the revenue it finally delivered; an open one against its target. Read YoY beside Capacity YoY: when the fleet grows, Per APCD YoY is the like-for-like figure.</div>') +
     H.card('window', '03', 'Booking window split', 'Share of each month\'s bookings by how far ahead the voyage sails' + (ctx.flags.charterEx ? ' · charters excluded' : ' · charters included'), winBody, H.tableBtn('window', ui)) +

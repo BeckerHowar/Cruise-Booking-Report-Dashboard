@@ -24,7 +24,8 @@ const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion:
 const isNarrow = () => window.innerWidth < 720;
 const ui = { view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null,
              source: 'simulated', sigma: { state: 'idle', message: '' }, still: reduced, narrow: isNarrow(),
-             sort: {}, filter: {}, flagsOpen: false, glossOpen: false, cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
+             sort: {}, filter: {}, flagsOpen: false, glossOpen: false,
+             paceLayout: ['side', 'stack'].includes(store.get('paceLayout')) ? store.get('paceLayout') : 'overlay', cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
 try { const s = JSON.parse(store.get('savedScenario') || 'null'); if (s && typeof s.vol === 'number') ui.saved = s; } catch (e) { /* unreadable */ }
 
 /* ---------- shareable link: the whole state lives in the address ---------- */
@@ -245,6 +246,14 @@ function paintPace(at, tix) {
     const dot = svg.querySelector('.live-dot'), mark = svg.querySelector('.live-mark');
     if (dot) { dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1)); }
     if (mark) mark.setAttribute('transform', 'translate(' + (x - mark.dataset.x).toFixed(1) + ',0)');
+    // split layouts: the figure beside the tip, and the level carried across the earlier years' panels
+    const val = svg.querySelector('.live-val');
+    if (val) {
+      val.setAttribute('x', (x + (val.getAttribute('text-anchor') === 'start' ? 9 : -9)).toFixed(1));
+      val.setAttribute('y', Math.max(y - 9, +d.pt + 11).toFixed(1));
+      val.textContent = U.pct(booked / denom);
+    }
+    svg.querySelectorAll('.live-guide').forEach(g => g.setAttribute('transform', 'translate(0,' + (y - d.basey).toFixed(1) + ')'));
 
     // the gap strip: a bar for the month in progress, measured against the prior-year line at this exact point
     const bar = svg.querySelector('.live-gap'), lab = svg.querySelector('.live-gaplabel'), now = svg.querySelector('.gap-now');
@@ -255,7 +264,7 @@ function paintPace(at, tix) {
     bar.setAttribute('visibility', show ? 'visible' : 'hidden'); lab.setAttribute('visibility', show ? 'visible' : 'hidden');
     if (now) now.setAttribute('visibility', show ? 'hidden' : 'visible');
     if (!show) return;
-    const gap = booked / denom - (r0 + (r1 - r0) * (pos - i0)), h = Math.max(1, Math.min(Math.abs(gap), +d.gm) * d.gk), cx = +d.pl + i1 / (d.n - 1) * d.iw;
+    const gap = booked / denom - (r0 + (r1 - r0) * (pos - i0)), h = Math.max(1, Math.min(Math.abs(gap), +d.gm) * d.gk), cx = +d.gpl + i1 / (d.n - 1) * d.giw;
     bar.setAttribute('x', (cx - d.bw / 2).toFixed(1)); bar.setAttribute('y', (gap >= 0 ? d.gy0 - h : +d.gy0).toFixed(1)); bar.setAttribute('height', h.toFixed(1));
     bar.setAttribute('fill', gap >= 0 ? 'var(--good)' : 'var(--crit)');
     lab.setAttribute('x', cx.toFixed(1)); lab.setAttribute('y', (gap >= 0 ? d.gy0 - h - 5 : +d.gy0 + h + 13).toFixed(1));
@@ -316,6 +325,7 @@ document.addEventListener('click', ev => {
   else if (act === 'focus') ui.focus = (arg[0] === '_' || ui.focus === arg) ? null : arg;
   else if (act === 'rev') ui.revTab = arg;
   else if (act === 'voyq') ui.voyQ = arg;
+  else if (act === 'pacelay') { ui.paceLayout = arg; store.set('paceLayout', arg); }
   else if (act === 'win') ctx.window = arg;
   else if (act === 'flags') ui.flagsOpen = !ui.flagsOpen;
   else if (act === 'gloss') ui.glossOpen = !ui.glossOpen;

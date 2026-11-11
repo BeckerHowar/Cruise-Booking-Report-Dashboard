@@ -58,6 +58,8 @@ every view recomputes.
 - **Press Replay on the Pace tab** and watch the booking pace line draw itself day by day through the
   last twelve closes, with the gap to the prior year tracked in the strip beneath it. The tables and
   figures update as each month-end passes.
+- **Split the pace chart.** The three sailing years can share one plot, or take a panel each, side by
+  side or stacked, on one scale with the current year's level carried across for comparison.
 - **Watch the dots in the cash river.** Each one is a fixed amount of cash, so a stream gains or loses
   dots as the cockpit moves it.
 - **Open a card's Table view** to see the numbers behind any chart, or **CSV** to download them.
