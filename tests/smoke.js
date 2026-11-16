@@ -5,12 +5,12 @@
    connector's column format and confirms the same position comes back. */
 const path = require('path');
 const app = path.join(__dirname, '..', 'app');
-for (const f of ['util', 'data-sim', 'engine', 'charts', 'sigma', 'views', 'views-detail']) require(path.join(app, f + '.js'));
+for (const f of ['util', 'data-sim', 'engine', 'charts', 'sigma', 'views', 'views-detail', 'views-board']) require(path.join(app, f + '.js'));
 const { util: U, engine: E, views: V, sigma: S } = globalThis.CBR;
 
 const D = E.prepare(CBR.buildSimulated());
 const base = () => ({ ...E.defaults(), asOf: D.meta.asOf, year: U.miYear(U.mi(D.meta.asOf)) });
-const ui = () => ({ view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null, still: true, narrow: false, filter: {} });
+const ui = () => ({ view: 'summary', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null, still: true, narrow: false, filter: {} });
 let renders = 0;
 const problems = [];
 
@@ -35,9 +35,25 @@ run('pace stacked', D, base(), { ...ui(), paceLayout: 'stack' });
 run('pace bars', D, base(), { ...ui(), paceLayout: 'bars' });
 for (const window of ['ytd', 'r12']) for (const bridgeBase of ['bud', 'fc', 'stly']) run(window + ' ' + bridgeBase, D, { ...base(), window }, { ...ui(), bridgeBase });
 for (const k of Object.keys(E.defaults().flags)) { const c = base(); c.flags = { ...c.flags, [k]: !c.flags[k] }; run('flag ' + k, D, c, ui()); }
-run('tables', D, base(), { ...ui(), tables: { bridge: 1, river: 1, cashm: 1, window: 1 }, revTab: 't12', voyQ: '2', saved: { vol: 0.1, price: 0, cancel: 0, dil: 0, fuel: 0 } });
+run('tables', D, base(), { ...ui(), tables: { bridge: 1, river: 1, cashm: 1, window: 1, held: 1 }, revTab: 't12', voyQ: '2', saved: { vol: 0.1, price: 0, cancel: 0, dil: 0, fuel: 0 } });
 run('scenario', D, { ...base(), scen: { vol: 0.2, price: -0.05, cancel: 0.5, dil: 0.02, fuel: 0.3 } }, ui());
 for (let m = 1; m <= 11; m++) run('as of -' + m, D, { ...base(), asOf: U.miEnd(U.mi(D.meta.asOf) - m) }, ui());
+
+// The figures the board sections add must agree with the ones they sit beside.
+{
+  const c = base(), near = (a, b, tol) => Math.abs(a - b) <= (tol || 1);
+  for (const y of [cy, cy + 1]) {
+    const byCh = U.sum(E.channelBook(D, c, y, c.asOf)), tot = E.togo(D, c, y).total.tix;
+    if (!near(byCh, tot)) problems.push('channel build-up ' + y + ': channels add to ' + U.money(byCh) + ', booked total is ' + U.money(tot));
+  }
+  const all = E.heldPath(D, c, 600), last = all.rows[all.rows.length - 1];
+  if (!last || Math.abs(last.held) > all.start * 0.001) problems.push('deposits held: ' + U.money(last ? last.held : NaN) + ' is still held after the last voyage in the book has sailed');
+  if (all.rows.some(r => r.held < -all.start * 0.001)) problems.push('deposits held: the balance goes negative');
+  const month = E.bridge(D, { ...c, window: 'month' }, 'bud'), ytd = E.bridge(D, { ...c, window: 'ytd' }, 'bud');
+  if (!(month.act.rev > 0 && month.act.rev < ytd.act.rev)) problems.push('month P&L: revenue ' + U.money(month.act.rev) + ' is not a part of the year to date ' + U.money(ytd.act.rev));
+  const debt = E.debt(D, c);
+  if (!debt.length || debt.some(r => !(r.outstanding > 0 && r.outstanding < r.principal && r.next12 > 0))) problems.push('debt: outstanding balances are not between zero and the original principal');
+}
 
 // Sigma round trip
 const dm = D.dims, ms = 864e5;

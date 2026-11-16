@@ -22,7 +22,7 @@ let D = null, simD = null, replay = null;
 const ctx = E.defaults();
 const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isNarrow = () => window.innerWidth < 720;
-const ui = { view: 'flight', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null,
+const ui = { view: 'summary', tables: {}, bridgeBase: 'bud', focus: null, revTab: 'month', voyQ: 'all', saved: null,
              source: 'simulated', sigma: { state: 'idle', message: '' }, still: reduced, narrow: isNarrow(),
              sort: {}, filter: {}, flagsOpen: false, glossOpen: false,
              paceLayout: ['bars', 'side', 'stack'].includes(store.get('paceLayout')) ? store.get('paceLayout') : 'overlay', cockpitMin: store.get('cockpitMin') === '1', showDeck: store.get('deck') !== '0' };
@@ -174,13 +174,13 @@ function render() {
   dim('grpAsOf', isDefs, 'This tab does not depend on the as-of date');
   dim('grpShip', isDefs, 'This tab does not depend on the ship');
   dim('grpYear', !view.scope.includes('year'), 'The ' + view.label + ' tab is not split by sailing year');
-  dim('grpWin', !view.scope.includes('window'), 'The period only changes the profit bridge, cash river and scenarios on the Flight deck');
+  dim('grpWin', !view.scope.includes('window'), 'The period changes the profit bridge, cash river and scenarios, which are on the Executive summary and Booking performance tabs');
   $('flagbar').classList.toggle('na', isDefs);
   renderFlags();
   $('gloss').hidden = !ui.glossOpen;
   renderCockpit(view);
 
-  $('viewNote').innerHTML = view.note + (view.slides === 'all' ? '' : (ui.showDeck ? ' <span class="deck">Replaces deck slides ' + view.slides + '.</span>' : '') +
+  $('viewNote').innerHTML = view.note + (!view.agenda ? '' : (ui.showDeck ? ' <span class="deck">Board deck: ' + view.agenda + '.</span>' : '') +
     '<button type="button" data-act="deck:toggle">' + (ui.showDeck ? 'hide deck references' : 'show deck references') + '</button>');
   $('printHead').textContent = view.label + ' · as of ' + U.dateLabel(ctx.asOf) + ' · ' + (ctx.ship < 0 ? 'Consolidated' : D.dims.ships[ctx.ship].name) +
     ' · sailing year ' + ctx.year + (V.scenTag(ctx).length ? ' · scenario: ' + V.scenTag(ctx).join(', ') : '');
@@ -197,7 +197,7 @@ function render() {
     note.hidden = false;
     note.innerHTML = '<b>' + head + '.</b> ' + U.esc(ui.sigma.message || '') +
       (live ? '' : D.source === 'sigma' ? ' The figures below are from the previous load.'
-                 : ' The figures below are still the simulated data. The column contract is under <a href="#" data-act="view:defs">Definitions &amp; data</a>.');
+                 : ' The figures below are still the simulated data. The column contract is under <a href="#" data-act="view:defs">Definitions</a>.');
   } else note.hidden = true;
 
   // Re-rendering replaces the view, so carry over what would otherwise be lost: keyboard focus and the river's animation clock.

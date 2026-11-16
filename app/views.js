@@ -1,32 +1,34 @@
-/* View helpers and the flight deck. Each view is a function (D, ctx, ui) that
-   returns an HTML string; main.js owns state and re-renders on every change. */
+/* View helpers and the headline cards. Every card is a function that returns an HTML
+   string; views-board.js arranges them into tabs, and main.js owns state and re-renders
+   on every change. */
 (function (root) {
 'use strict';
 const CBR = root.CBR, U = CBR.util, E = CBR.engine, C = CBR.charts;
 const V = CBR.views = { render: {} };
 
+// The tabs follow the board deck: its agenda sections in order, then the supporting detail.
 // scope lists the controls, beyond the as-of date and ship, that change a tab.
 V.LIST = [
-  { id: 'flight',   label: 'Flight deck',     slides: '2–3, 7–8', scope: ['year', 'window', 'cockpit'],
-    note: 'The one-page read: where the book stands, what moved profit, where the cash went.' },
-  { id: 'pace',     label: 'Pace',            slides: '22–28, 85–88', scope: ['year'],
-    note: 'Booking curves against the same point in prior years, the booking window split, and the consolidated report by quarter.' },
-  { id: 'togo',     label: 'Revenue to-go',   slides: '9–21, 43–46', scope: ['year', 'cockpit'],
-    note: 'Target less booked, by ship, quarter, region and voyage.' },
-  { id: 'channels', label: 'Channels',        slides: '4–6', scope: [],
-    note: 'Channel mix and the strategic agency roster, for bookings made this calendar year.' },
-  { id: 'suites',   label: 'Suites',          slides: '30–33', scope: [],
-    note: 'Suite tier mix against budget, and what each tier earns.' },
-  { id: 'guests',   label: 'Guests',          slides: '34–37, 54–58, 73–78', scope: ['year'],
-    note: 'Guests sailed, bookers, repeaters, future-voyage conversion and guest geography.' },
-  { id: 'dilution', label: 'Dilution & cancellations', slides: '38–42, 59–60', scope: [],
-    note: 'Discount take rates, cancellation behaviour and the policies behind both.' },
-  { id: 'voyages',  label: 'Voyages',         slides: '61–72, 79–84', scope: ['year'],
+  { id: 'summary',   label: 'Executive summary',     agenda: 'agenda item 1, executive summary', scope: ['year', 'window', 'cockpit'],
+    note: 'The one-page read: where the book stands, what moved profit and what needs a decision.' },
+  { id: 'financial', label: 'Financial performance', agenda: 'agenda item 2, financial performance, guest satisfaction and status of yachts', scope: ['year', 'cockpit'],
+    note: 'The headline figures, the month and year-to-date P&L, and each ship\'s record this year.' },
+  { id: 'bookings',  label: 'Booking performance',   agenda: 'agenda item 3, booking performance', scope: ['year', 'window', 'cockpit'],
+    note: 'Bookings against target, by channel, the bridge from budget to outlook, the financial outlook and the cash forecast.' },
+  { id: 'actions',   label: 'Action plan',           agenda: 'agenda item 4, management action plan', scope: ['cockpit'],
+    note: 'The evidence behind the management action plan: where the book needs action, what promotions cost, and how each channel is selling.' },
+  { id: 'budget',    label: 'Budget',                agenda: 'agenda item 5, initial budget discussion', scope: ['cockpit'],
+    note: 'Next year\'s sales build-up, target P&L, revenue still to go, the outlook beyond it and the restricted cash position.' },
+  { id: 'bonds',     label: 'Bonds & growth',        agenda: 'agenda item 6, bond update, and the growth slides held back from this meeting', scope: [],
+    note: 'Debt outstanding and its service. The investor-relations and growth slides are narrative.' },
+  { id: 'detail',    label: 'Booking detail', agenda: 'appendix', scope: ['year'],
+    note: 'Revenue to-go by ship, quarter and region, the booking window, the consolidated report, the revenue tables and cancellations.' },
+  { id: 'voyages',   label: 'Voyages', agenda: 'appendix', scope: ['year'],
     note: 'Every voyage against forecast, budget and its own position three months ago.' },
-  { id: 'revenue',  label: 'Revenue tables',  slides: '48–51', scope: [],
-    note: 'Booking production for the month, the trailing three months and the trailing twelve, across all sailing years.' },
-  { id: 'defs',     label: 'Definitions & data', slides: 'all', scope: [],
-    note: 'Every measure, dimension and adjustment, the deck-to-view map, and the Sigma data contract.' },
+  { id: 'guests',    label: 'Suites & guests', agenda: 'appendix', scope: ['year'],
+    note: 'Suite tier mix and economics, guests sailed, bookers, repeaters and guest geography.' },
+  { id: 'defs',      label: 'Definitions', agenda: '', scope: [],
+    note: 'Every measure, dimension and adjustment, the board-deck-to-dashboard map, and the Sigma data contract.' },
 ];
 
 V.ADJUSTMENTS = [
@@ -111,7 +113,7 @@ V.bridgeBase = (D, ctx, ui) => ui.bridgeBase === 'fc' && !E.hasForecast(D, ctx) 
 const BASE_NAME = { bud: 'Budget', fc: 'Forecast', stly: 'Prior year' };
 
 /* =====================================================================
-   FLIGHT DECK
+   THE HEADLINE CARDS: the read, the profit bridge, the cash river
    ===================================================================== */
 // One sentence and three figures: the read for someone who stops here.
 function hero(D, ctx, ui) {
@@ -240,7 +242,7 @@ function riverCard(D, ctx, ui) {
     H.tableBtn('river', ui));
 }
 
-function cashMonthsCard(D, ctx, ui) {
+function cashMonthsCard(D, ctx, ui, wide) {
   const rows = E.cashMonths(D, ctx, 9, 12), cut = rows.findIndex(r => r.forecast);
   let body;
   if (H.showTable(ui, 'cashm')) {
@@ -249,7 +251,7 @@ function cashMonthsCard(D, ctx, ui) {
                        U.money(-r.ops), U.money(-(r.debt + r.dry)), H.delta(r.net, U.signedMoney, true, 0.5)] })));
   } else {
     body = H.body(C.signed({ labels: rows.map(r => U.miLabel(r.mi)), values: rows.map(r => r.net), fadeFrom: cut < 0 ? null : cut, markAt: cut < 0 ? null : cut,
-      tips: rows.map(r => 'Receipts ' + U.money(r.cashIn) + ', paid out ' + U.money(r.cashOut)), tipFmt: U.signedMoney, label: 'Net cash by month' }));
+      tips: rows.map(r => 'Receipts ' + U.money(r.cashIn) + ', paid out ' + U.money(r.cashOut)), tipFmt: U.signedMoney, label: 'Net cash by month', width: wide ? 1120 : 640, height: wide ? 250 : 240 }));
   }
   return H.card('cashm', '06', 'Net cash by month', 'Receipts less everything paid out · closed months, then the schedule ahead', body, H.tableBtn('cashm', ui));
 }
@@ -365,15 +367,5 @@ function story(D, ctx, ui) {
     (tag.length ? ' · ' + tag.join(' · ') + (br.W.forecast ? '' : ' (the cockpit moves unsailed voyages, so this closed window is unchanged)') : ' · no scenario adjustments') + '</div></div>');
 }
 
-V.render.flight = function (D, ctx, ui) {
-  const cy = U.miYear(U.mi(ctx.asOf)), next = Math.max(ctx.year, cy) + (ctx.year > cy ? 0 : 1);
-  const paceYear = D.voyages.some(v => v.year === next) ? next : ctx.year;
-  return hero(D, ctx, ui) + kpis(D, ctx) +
-    '<div class="row two">' + story(D, ctx, ui) + bridgeCard(D, ctx, ui) + '</div>' +
-    riverCard(D, ctx, ui) +
-    '<div class="row two">' + sinceCard(D, ctx) + scenariosCard(D, ctx, ui) + '</div>' +
-    '<div class="row two">' + cashMonthsCard(D, ctx, ui) + paceCard(D, ctx, paceYear, '07', 'pace1') + '</div>' +
-    H.card('watch', '08', 'Voyage watchlist', 'The five unsailed voyages projected to finish furthest short of target · next 400 days',
-      watchTable(D, E.watchlist(D, ctx, 5)) + '<div class="foot-note">The full, sortable list is under <a href="#" data-act="view:togo">Revenue to-go</a>.</div>');
-};
+V.cards = { hero, kpis, story, bridge: bridgeCard, river: riverCard, cashMonths: cashMonthsCard, scenarios: scenariosCard, since: sinceCard, pace: paceCard };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

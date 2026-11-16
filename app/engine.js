@@ -429,6 +429,7 @@ E.outlookTotal = function (D, ctx, year) {
    --------------------------------------------------------------------- */
 E.windowMonths = function (D, ctx) {
   const am = U.mi(ctx.asOf), y0 = U.miYear(am) * 12;
+  if (ctx.window === 'month') return { from: am, to: am, label: U.miLabel(am), short: U.miLabel(am), forecast: false };
   if (ctx.window === 'ytd') return { from: y0, to: am, label: 'YTD ' + U.miLabel(y0) + ' – ' + U.miLabel(am), short: 'YTD', forecast: false };
   if (ctx.window === 'r12') return { from: am + 1, to: am + 12, label: 'Rolling 12 months to ' + U.miLabel(am + 12), short: 'Rolling 12', forecast: true };
   const from = ctx.year * 12;
@@ -566,7 +567,7 @@ E.cash = function (D, ctx) {
     const lo = D.range.minMi, hi = D.range.maxMi, n = hi - lo + 1, A = ctx.asOf, am = U.mi(A);
     const V = D.voyages, O = E.outlook(D, ctx), T = ctx.terms, R = reader(ctx), nS = D.dims.ships.length;
     const rec = Array.from({ length: nS }, () => f64(n)), refunds = f64(n), comm = f64(n), debt = f64(n), dry = f64(n);
-    const paidV = f64(V.length), revV = f64(V.length);
+    const paidV = f64(V.length), revV = f64(V.length), dueV = f64(V.length), release = f64(n);
     let held = 0, stateCash = 0;
     const put = (arr, m, x) => { const i = m - lo; if (i >= 0 && i < n) arr[i] += x; };
 
@@ -583,7 +584,7 @@ E.cash = function (D, ctx) {
       const cancelled = b.cd && b.cd <= A;
       if (early && !(cancelled && b.cd <= F)) {
         if (F <= A) { put(rec[v.ship], U.mi(F), r - dep); paid = r; }
-        else put(rec[v.ship], U.mi(F), (r - dep) * (1 - O.cRem[b.v]));
+        else { const due = (r - dep) * (1 - O.cRem[b.v]); put(rec[v.ship], U.mi(F), due); dueV[b.v] += due; }
       }
       if (cancelled) {
         const fee = Math.min(paid, R.fee(b));
@@ -607,6 +608,8 @@ E.cash = function (D, ctx) {
         else put(rec[v.ship], m, pick);
       }
       put(comm, v.smi, T.comm * O.tradeRev[i]);
+      // what guests will have paid in by sailing stops being a deposit the month the voyage sails
+      put(release, Math.max(v.smi, am + 1), paidV[i] + dueV[i] + O.pickRev[i] - expRefund);
     }
 
     const pcdSM = new Map();
@@ -625,7 +628,7 @@ E.cash = function (D, ctx) {
     // Receipts less refunds through the close must equal what the booking-level state says was kept.
     let flow = 0;
     for (let i = 0; i <= am - lo && i < n; i++) { for (let s = 0; s < nS; s++) flow += rec[s][i]; flow -= refunds[i]; }
-    return { lo, n, am, rec, refunds, comm, debt, dry, costs, held, tie: flow - stateCash };
+    return { lo, n, am, rec, refunds, comm, debt, dry, costs, held, release, tie: flow - stateCash };
   });
 };
 
@@ -670,9 +673,52 @@ E.cashMonths = function (D, ctx, back, fwd) {
   return out;
 };
 
+// Guest deposits held after the close, month by month: receipts in, refunds out, and each
+// voyage's cash released as it sails. Sailings not yet in the book add nothing, so the far end understates.
+E.heldPath = function (D, ctx, months) {
+  const C = E.cash(D, ctx), rows = [];
+  let held = C.held;
+  for (let m = C.am + 1; m <= C.am + months; m++) {
+    const i = m - C.lo;
+    if (i < 0 || i >= C.n) break;
+    let inn = 0;
+    for (const r of C.rec) inn += r[i];
+    held += inn - C.refunds[i] - C.release[i];
+    rows.push({ mi: m, cashIn: inn, refunds: C.refunds[i], release: C.release[i], held });
+  }
+  return { start: C.held, rows };
+};
+
+// Each debt facility at the close: what is still owed and what the next twelve months of service cost.
+E.debt = function (D, ctx) {
+  if (!D.costs || ctx.ship >= 0) return [];
+  const am = U.mi(ctx.asOf);
+  return D.costs.debt.map(L => {
+    const p = L.principal / L.termM, paid = U.clamp(am - L.startMi + 1, 0, L.termM);
+    let next12 = 0;
+    for (let k = paid; k < Math.min(L.termM, paid + 12); k++) next12 += p + (L.principal - p * k) * L.rate / 12;
+    return { name: L.name, principal: L.principal, rate: L.rate, startMi: L.startMi, endMi: L.startMi + L.termM - 1, outstanding: L.principal - p * paid, next12 };
+  });
+};
+
 /* ---------------------------------------------------------------------
    VIEW-LEVEL AGGREGATIONS
    --------------------------------------------------------------------- */
+// Booked ticket revenue by channel for one sailing year, as the book stood at day t.
+// Adds up to the year's booked total.
+E.channelBook = function (D, ctx, year, t) {
+  return memo(D, 'chb|' + year + '|' + t + '|' + fkey(ctx) + '|' + (ctx.flags.prorate ? 1 : 0), () => {
+    const R = reader(ctx), out = new Array(D.dims.channels.length).fill(0);
+    const share = D.voyages.map(v => (ctx.ship >= 0 && v.ship !== ctx.ship) ? 0 : E.yearShare(v, year, ctx.flags.prorate));
+    for (const b of D.bookings) {
+      const w = share[b.v];
+      if (!w || b.bd > t || R.skip(b)) continue;
+      out[b.ch] += ((b.cd && b.cd <= t) ? R.fee(b) : R.rev(b)) * w;
+    }
+    return out;
+  });
+};
+
 // Revenue to-go: target less booked, three ways. The three totals must agree.
 E.togo = function (D, ctx, year) {
   const P = E.position(D, ctx, ctx.asOf), R = E.yearRange(year);

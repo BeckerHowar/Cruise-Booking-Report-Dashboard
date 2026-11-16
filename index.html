@@ -169,6 +169,17 @@
     background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px;
     box-shadow: var(--shadow); margin-bottom: 12px; min-width: 0;
   }
+  /* A slide of the board deck: its heading, then the cards that carry it. */
+  .slide { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 26px 2px 10px; padding-top: 14px; border-top: 1px solid var(--hairline-2); }
+  #view > .slide:first-child { margin-top: 8px; padding-top: 0; border-top: none; }
+  .slide h3 { margin: 0; font-family: var(--serif); font-size: 20px; font-weight: 600; color: var(--ink); text-wrap: balance; }
+  .slide .s-note { flex: 1 1 340px; min-width: 0; font-size: 13px; color: var(--muted); max-width: 110ch; }
+  .slide .s-note b { color: var(--ink); }
+  .slide.narr { margin-top: 16px; padding-top: 11px; }
+  .slide.narr h3 { font-size: 16.5px; color: var(--ink-2); }
+  .agenda { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 6px 26px; padding: 2px 18px 16px; }
+  .agenda h3 { margin: 10px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); }
+  .agenda ol { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.75; color: var(--ink-2); }
   .card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; padding: 13px 16px 6px; }
   .card-head h2 { margin: 0; font-family: var(--serif); font-size: 17.5px; font-weight: 600; }
   .card-head h2 .num { font-family: var(--sans); font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .06em; margin-right: 9px; vertical-align: 2px; }
@@ -317,8 +328,8 @@
       </div>
     </div>
     <div class="mast-sub">
-      An 88-slide monthly booking report rebuilt as one live page for <span class="co">Meridian Yacht Collection</span>, a fictional
-      three-ship yacht line. Every view reads from a single booking table.
+      A board deck and the booking report behind it, rebuilt as one live page for <span class="co">Meridian Yacht Collection</span>, a fictional
+      three-ship yacht line. The tabs follow the board agenda, and every view reads from a single booking table.
     </div>
     <details class="fold">
       <summary>How this was built</summary>
@@ -332,7 +343,7 @@
       <p>
         The data source is a switch. <b>Simulated</b> generates a deterministic book for a fictional line, with deliberate deviations
         from plan so every variance has a cause. <b>Sigma</b> reads the same two tables from a Sigma workbook when the page is embedded
-        there as a plugin; the column contract is under Definitions &amp; data. No real company's figures are in this repository.
+        there as a plugin; the column contract is under Definitions. No real company's figures are in this repository.
         AI-assisted build; analyst-specified logic.
       </p>
     </details>
@@ -375,13 +386,14 @@
 <div class="cockpit" id="cockpit" aria-label="Scenario cockpit"></div>
 <div id="tip" role="tooltip"></div>
 
-<script src="app/util.js?v=20"></script>
-<script src="app/data-sim.js?v=20"></script>
-<script src="app/engine.js?v=20"></script>
-<script src="app/charts.js?v=20"></script>
-<script src="app/sigma.js?v=20"></script>
-<script src="app/views.js?v=20"></script>
-<script src="app/views-detail.js?v=20"></script>
-<script src="app/main.js?v=20"></script>
+<script src="app/util.js?v=23"></script>
+<script src="app/data-sim.js?v=23"></script>
+<script src="app/engine.js?v=23"></script>
+<script src="app/charts.js?v=23"></script>
+<script src="app/sigma.js?v=23"></script>
+<script src="app/views.js?v=23"></script>
+<script src="app/views-detail.js?v=23"></script>
+<script src="app/views-board.js?v=23"></script>
+<script src="app/main.js?v=23"></script>
 </body>
 </html>

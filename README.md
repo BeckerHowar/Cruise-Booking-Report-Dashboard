@@ -1,8 +1,8 @@
 <h1 align="center">Cruise Booking Report Dashboard</h1>
 
 <p align="center">
-  An 88-slide monthly booking report rebuilt as one live page —<br>
-  pace, revenue to-go, a profit bridge, a cash river and a scenario cockpit, all from one booking table.
+  A board deck and the booking report behind it, rebuilt as one live page —<br>
+  laid out in the order of the board agenda, with a profit bridge, a cash river and a scenario cockpit, all from one booking table.
 </p>
 
 <p align="center">
@@ -17,9 +17,10 @@
 
 ## What it is
 
-A cruise line's monthly booking report usually lives in a slide deck: dozens of tables and charts, each
-pulled separately, each with its own filters. This page replaces that deck with a single dashboard for
-**Meridian Yacht Collection**, a fictional three-ship yacht line.
+A cruise line's board deck and monthly booking report usually live in slides: dozens of tables and
+charts, each pulled separately, each with its own filters. This page replaces them with a single
+dashboard for **Meridian Yacht Collection**, a fictional three-ship yacht line. Its tabs follow the
+board agenda, and under each tab a heading marks every slide of the deck in order.
 
 Every view resolves to two tables: one row per suite booked on a voyage on a booking date, and one row
 per voyage carrying capacity, budget and forecast. Eighteen base measures and thirteen dimensions
@@ -28,18 +29,24 @@ every view recomputes.
 
 ## The tabs
 
-| Tab | What it answers | Deck slides it replaces |
-|---|---|---|
-| Flight deck | Where the book stands, what moved profit, where the cash went | 2–3, 7–8 |
-| Pace | Booking curves against prior years, booking window split, consolidated report by quarter | 22–28, 85–88 |
-| Revenue to-go | Target less booked, by ship, quarter, region and voyage | 9–21, 43–46 |
-| Channels | Channel mix and the strategic agency roster | 4–6 |
-| Suites | Suite tier mix against budget, and what each tier earns | 30–33 |
-| Guests | Guests sailed, bookers, repeaters, future-voyage conversion, guest geography | 34–37, 54–58, 73–78 |
-| Dilution & cancellations | Discount take rates, cancellation behaviour, the policies behind both | 38–42, 59–60 |
-| Voyages | Every voyage against forecast, budget and its own position three months ago | 61–72, 79–84 |
-| Revenue tables | Booking production for the month, trailing 3 months and trailing 12 | 48–51 |
-| Definitions & data | Every measure, dimension and adjustment, and the Sigma data contract | — |
+The first six tabs are the board agenda. The rest is the supporting detail.
+
+| Tab | Board deck slides it carries |
+|---|---|
+| Executive summary | The one-page read and the agenda |
+| Financial performance | Key performance indicators, guest signals, fleet record, the month's P&L and the year-to-date P&L |
+| Booking performance | Bookings against target, monthly bookings and pace by channel, the budget-to-outlook bridge, the financial outlook, the cash forecast, booking momentum and forecast coverage |
+| Action plan | Where the book needs action, promotion cost and take rates, direct and trade updates, the drydock schedule |
+| Budget | Next year's sales build-up by channel, target P&L, revenue still to go, the outlook for the year after, and guest deposits held over the next 24 months |
+| Bonds & growth | Debt outstanding and its service |
+| Booking detail | Revenue to-go by ship, quarter and region, the booking window, the consolidated report, revenue tables, cancellations |
+| Voyages | Every voyage against forecast, budget and its own position three months ago |
+| Suites & guests | Suite tier mix and economics, guests sailed, bookers, repeaters, guest geography |
+| Definitions | Every measure, dimension and adjustment, and the Sigma data contract |
+
+Some board slides cannot come from booking data: guest satisfaction scores, marketing spend, market
+commentary, the action plan itself, investor relations. Each keeps its place in the order as a
+one-line note marked *Narrative*, so the page reads in the same sequence as the deck.
 
 ## Things worth trying
 
@@ -55,7 +62,7 @@ every view recomputes.
 - **Flip an adjustment.** Barter revenue, cruise-to-cruise transfers, non-revenue guests and voyages,
   and proration are handled inconsistently from slide to slide in a deck. Here each is one switch
   applied to every view at once.
-- **Press Replay on the Pace tab** and watch the booking pace line draw itself day by day through the
+- **Press Replay on the Booking performance tab** and watch the booking pace line draw itself day by day through the
   last twelve closes, with the gap to the prior year tracked in the strip beneath it. The tables and
   figures update as each month-end passes.
 - **Change how the pace chart is drawn.** The three sailing years can share one plot as lines or as
@@ -75,7 +82,7 @@ The outlook projects every unsailed voyage to its finish. It starts from the voy
 it by how much booking pace at that distance from sailing has actually predicted the finish, fitted on
 voyages that have already sailed. Pace that history shows to be noise is given little weight.
 
-The Pace tab carries a standing backtest: the outlook projected from 12, 9, 6 and 3 months earlier,
+The Booking detail tab carries a standing backtest: the outlook projected from 12, 9, 6 and 3 months earlier,
 scored against what those voyages then delivered, beside the simplest forecast there is — assume every
 voyage lands on target. On the simulated book the outlook beats that benchmark voyage by voyage at all
 four horizons for the fleet, by a small margin, and does not for every single ship. The card shows
@@ -91,7 +98,7 @@ years. Actuals are the plan run through deliberate deviations (a soft booking pa
 shifts, a drydock overrun, a fuel spike), so every variance traces back to something that moved.
 
 **Sigma** reads the same two tables from a Sigma workbook when this page is embedded there as a plugin.
-Columns are matched by name; the full contract is listed on the Definitions & data tab and in
+Columns are matched by name; the full contract is listed on the Definitions tab and in
 [`app/sigma.js`](app/sigma.js). Sigma hands data over 25,000 rows at a time, so the connector reads each
 table page by page and draws nothing until both are complete. It follows Sigma's published plugin API
 and is tested against a simulated Sigma host, but **it has not yet been run inside a workbook**.
@@ -146,7 +153,8 @@ Plain HTML, CSS and JavaScript. No frameworks, no build step, and no network req
 | `app/sigma.js` | Sigma connector and data contract |
 | `app/engine.js` | Every measure: position, pace, outlook, profit bridge, cash river, integrity checks |
 | `app/charts.js` | Hand-rolled SVG charts, including the cash river |
-| `app/views.js`, `app/views-detail.js` | The tabs |
+| `app/views.js`, `app/views-detail.js` | The cards |
+| `app/views-board.js` | The tabs: which cards carry which slide of the board deck |
 | `app/main.js` | State and wiring |
 
 I specified the measures, dimensions, adjustments and the deck-to-view map; the build was AI-assisted.

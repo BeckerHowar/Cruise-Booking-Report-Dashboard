@@ -1,7 +1,9 @@
-/* The detail tabs. Each follows a group of slides in the booking report deck. */
+/* The detail cards, in the groups the booking report uses. Each group returns its cards by
+   name; views-board.js decides which tab each one appears on. */
 (function (root) {
 'use strict';
 const CBR = root.CBR, U = CBR.util, E = CBR.engine, C = CBR.charts, V = CBR.views, H = V.h;
+const P = V.parts = {};
 const Q = ['Q1', 'Q2', 'Q3', 'Q4'];
 const cyOf = ctx => U.miYear(U.mi(ctx.asOf));
 const keyQ = (v, m) => U.miQuarter(m);
@@ -23,7 +25,7 @@ const sumRows = (rows, from, to, lo) => {
 };
 
 /* ============================== PACE ============================== */
-V.render.pace = function (D, ctx, ui) {
+P.pace = function (D, ctx, ui) {
   const y = ctx.year, cy = cyOf(ctx), am = U.mi(ctx.asOf), tgt = E.targetLabel(D, y), lyMi = U.mi(ctx.asOf - 365);
   const P = E.position(D, ctx, ctx.asOf), Pfinal = E.position(D, ctx, D.meta.pull);
   const cur = E.rollup(D, ctx, P, { ...E.yearRange(y), key: keyQ });
@@ -99,23 +101,22 @@ V.render.pace = function (D, ctx, ui) {
     : '<div class="pad policy"><p>There is not enough sailed history before this close to test the outlook.</p></div>';
   const better = bt.filter(r => r.absOut <= r.absTgt).length;
 
-  return V.paceCard(D, ctx, y, '01', 'pace', true, ui.paceLayout || 'overlay') +
-    H.card('curvet', '02', 'Booking curve table', y + ' sailings by quarter against ' + tgt + ' and the two prior years · ' + H.shipName(D, ctx), curveTable +
-      '<div class="foot-note">A completed prior year is measured against the revenue it finally delivered; an open one against its target. Read YoY beside Capacity YoY: when the fleet grows, Per APCD YoY is the like-for-like figure.</div>') +
-    H.card('window', '03', 'Booking window split', 'Share of each month\'s bookings by how far ahead the voyage sails' + (ctx.flags.charterEx ? ' · charters excluded' : ' · charters included'), winBody, H.tableBtn('window', ui)) +
-    H.card('consol', '04', 'Consolidated booking report', 'Each sailing year against the same time last year, by sailing quarter · ' + H.shipName(D, ctx),
+  return { curvet: H.card('curvet', '02', 'Booking curve table', y + ' sailings by quarter against ' + tgt + ' and the two prior years · ' + H.shipName(D, ctx), curveTable +
+      '<div class="foot-note">A completed prior year is measured against the revenue it finally delivered; an open one against its target. Read YoY beside Capacity YoY: when the fleet grows, Per APCD YoY is the like-for-like figure.</div>'),
+    window: H.card('window', '03', 'Booking window split', 'Share of each month\'s bookings by how far ahead the voyage sails' + (ctx.flags.charterEx ? ' · charters excluded' : ' · charters included'), winBody, H.tableBtn('window', ui)),
+    consol: H.card('consol', '04', 'Consolidated booking report', 'Each sailing year against the same time last year, by sailing quarter · ' + H.shipName(D, ctx),
       H.table([{ h: 'Sailing period', l: 1 }, { h: 'Booked' }, { h: 'STLY' }, { h: 'Change' }, { h: 'Capacity' , tip: 'Change in available passenger cruise days against a year earlier.' },
                { h: 'Per APCD', tip: 'Change in revenue per available passenger cruise day: the like-for-like comparison.' },
-               { h: 'PCDs' }, { h: 'STLY PCDs' }, { h: 'LF' }, { h: 'STLY LF' }, { h: 'GPD' }, { h: 'STLY GPD' }], conRows)) +
-    H.card('accuracy', '05', 'How good is the outlook?', 'The outlook projected from earlier closes, scored against what those voyages then delivered · ' + H.shipName(D, ctx),
+               { h: 'PCDs' }, { h: 'STLY PCDs' }, { h: 'LF' }, { h: 'STLY LF' }, { h: 'GPD' }, { h: 'STLY GPD' }], conRows)),
+    accuracy: H.card('accuracy', '05', 'How good is the outlook?', 'The outlook projected from earlier closes, scored against what those voyages then delivered · ' + H.shipName(D, ctx),
       btBody + '<div class="foot-note">' + (bt.length ? 'Voyage by voyage, the outlook beat "assume the target" at ' + better + ' of ' + bt.length + ' horizons. ' : '') +
       'The outlook starts from each voyage\'s target and moves it by how much pace at that distance from sailing has actually predicted the finish' +
       (fit.fitted ? ', fitted on ' + U.int(fit.fitted) + ' voyage observations sailed before this close' : '; there is too little sailed history to fit that yet, so pace is trusted only as the book fills') +
-      '. Each test uses only what was known at its own date.</div>');
+      '. Each test uses only what was known at its own date.</div>') };
 };
 
 /* ========================== REVENUE TO-GO ========================== */
-V.render.togo = function (D, ctx, ui) {
+P.togo = function (D, ctx, ui) {
   const y = ctx.year, tg = E.togo(D, ctx, y), tgt = E.targetLabel(D, y), dm = D.dims;
   const cell = a => !a || !a.tgt ? { v: '—' } : { v: '<b>' + (a.tgt >= a.tix ? U.money(a.tgt - a.tix) : U.money(a.tix - a.tgt) + ' over') + '</b><small>' + U.pct(a.tix / a.tgt, 0) + ' booked</small>', cls: 'tg', style: heat(a.tix / a.tgt) };
   const ships = dm.ships.map((s, i) => i).filter(i => ctx.ship < 0 || ctx.ship === i);
@@ -131,15 +132,15 @@ V.render.togo = function (D, ctx, ui) {
       '<div class="rr-track" style="width:' + (a.tgt / maxT * 100).toFixed(1) + '%"><div class="rr-fill" style="width:' + Math.min(100, p * 100).toFixed(1) + '%"></div></div></div>';
   }).join('');
 
-  return H.card('matrix', '01', y + ' revenue to-go by ship and quarter', tgt + ' less booked to date · darker cells are further along',
-      H.table([{ h: 'Ship', l: 1 }, { h: 'Q1' }, { h: 'Q2' }, { h: 'Q3' }, { h: 'Q4' }, { h: 'FY' + y }], rows, 'matrix')) +
-    H.card('region', '02', y + ' revenue to-go by region', 'Bar length is the target; the fill is what is booked · ' + H.shipName(D, ctx), '<div class="pad">' + (bars || 'No targets in this scope.') + '</div>') +
-    H.card('watchall', '03', 'Voyage watchlist', 'Every unsailed voyage in the next 400 days, largest projected shortfall first · click a column heading to sort · ' + H.shipName(D, ctx),
-      V.watchTable(D, E.watchlist(D, ctx), 'watch'));
+  return { matrix: H.card('matrix', '01', y + ' revenue to-go by ship and quarter', tgt + ' less booked to date · darker cells are further along',
+      H.table([{ h: 'Ship', l: 1 }, { h: 'Q1' }, { h: 'Q2' }, { h: 'Q3' }, { h: 'Q4' }, { h: 'FY' + y }], rows, 'matrix')),
+    region: H.card('region', '02', y + ' revenue to-go by region', 'Bar length is the target; the fill is what is booked · ' + H.shipName(D, ctx), '<div class="pad">' + (bars || 'No targets in this scope.') + '</div>'),
+    watchall: H.card('watchall', '03', 'Voyage watchlist', 'Every unsailed voyage in the next 400 days, largest projected shortfall first · click a column heading to sort · ' + H.shipName(D, ctx),
+      V.watchTable(D, E.watchlist(D, ctx), 'watch')) };
 };
 
 /* ============================= CHANNELS ============================= */
-V.render.channels = function (D, ctx, ui) {
+P.channels = function (D, ctx, ui) {
   const prod = E.production(D, ctx, ctx.asOf), am = U.mi(ctx.asOf), y0 = cyOf(ctx) * 12, dm = D.dims;
   const months = H.months(am - 12, am).filter(m => m >= prod.lo);
   const ser = dm.channels.map((name, i) => ({ name, color: C.PAL[i % 8], values: months.map(m => prod.rows[m - prod.lo].ch[i]) }));
@@ -156,16 +157,16 @@ V.render.channels = function (D, ctx, ui) {
     U.int(a.count), U.dollars(a.gpd), U.pct(a.canRate)]);
   acctRows.push({ cls: 'sub', cells: ['Trade total', U.money(ta.total), '100.0%', U.money(ta.totalLy), ta.totalLy ? H.delta(ta.total / ta.totalLy - 1, U.signedPct, true, 0.0005) : '—', '', '', ''] });
 
-  return H.card('chmix', '01', 'Channel mix', 'Share of each month\'s bookings by channel · ' + H.shipName(D, ctx),
+  return { chmix: H.card('chmix', '01', 'Channel mix', 'Share of each month\'s bookings by channel · ' + H.shipName(D, ctx),
       H.body(C.stack({ labels: months.map(U.miLabel), series: ser, pct: true, tipFmt: U.money, width: 1120, height: 280, every: 1, label: 'Channel mix by booking month' })) + C.legend(ser) +
-      H.table([{ h: 'Channel', l: 1 }, { h: U.miLabel(am) }, { h: 'Share of month' }, { h: 'YTD' }, { h: 'Share of YTD' }, { h: 'STLY share' }, { h: 'Shift' }, { h: 'YTD vs STLY' }], rows)) +
-    H.card('trade', '02', 'Strategic agency accounts', 'Trade bookings year to date, at agency headquarters level · ' + H.shipName(D, ctx),
+      H.table([{ h: 'Channel', l: 1 }, { h: U.miLabel(am) }, { h: 'Share of month' }, { h: 'YTD' }, { h: 'Share of YTD' }, { h: 'STLY share' }, { h: 'Shift' }, { h: 'YTD vs STLY' }], rows)),
+    trade: H.card('trade', '02', 'Strategic agency accounts', 'Trade bookings year to date, at agency headquarters level · ' + H.shipName(D, ctx),
       H.table([{ h: 'Account', l: 1 }, { h: 'YTD bookings' }, { h: 'Share of trade' }, { h: 'STLY' }, { h: 'YoY' }, { h: 'Bookings' }, { h: 'GPD' },
-               { h: 'Cancelled', tip: 'Share of this year\'s bookings already cancelled.' }], acctRows));
+               { h: 'Cancelled', tip: 'Share of this year\'s bookings already cancelled.' }], acctRows)) };
 };
 
 /* ============================== SUITES ============================== */
-V.render.suites = function (D, ctx, ui) {
+P.suites = function (D, ctx, ui) {
   const tm = E.tierMix(D, ctx), dm = D.dims, tiers = dm.tiers;
   const ser = k => tiers.map((name, t) => ({ name, color: C.PAL[[3, 0, 5][t]], values: tm.map(c => c[k][t]) }));
   const grp = label => ({ cls: 'grp', cells: [label].concat(tm.map(() => '')) });
@@ -175,19 +176,17 @@ V.render.suites = function (D, ctx, ui) {
     .concat([{ cls: 'sub', cells: ['All tiers'].concat(tm.map(c => U.dollars(ratio(c.revTot, c.suitesTot)))) }])
     .concat([grp('Revenue per guest day')]).concat(tiers.map((n, t) => [n].concat(tm.map(c => U.dollars(ratio(c.rev[t], c.pcd[t]))))));
   const map = dm.ships.map(s => [s.name].concat(tiers.map((_, t) => (s.cats && s.cats[t] ? s.cats[t] + ' · ' : '') + (s.suites ? s.suites[t] + ' suites' : '—'))));
-  return '<div class="row two">' +
-    H.card('tmrev', '01', 'Revenue mix by suite tier', 'Share of ticket revenue · ' + H.shipName(D, ctx),
-      H.body(C.stack({ labels: tm.map(c => c.label), series: ser('rev'), pct: true, tipFmt: U.money, every: 1, height: 250, label: 'Revenue mix by suite tier' })) + C.legend(ser('rev'))) +
-    H.card('tmsuite', '02', 'Suite mix by tier', 'Share of suites sold', H.body(C.stack({ labels: tm.map(c => c.label), series: ser('suites'), pct: true, tipFmt: U.int, every: 1, height: 250, label: 'Suite mix by tier' })) + C.legend(ser('suites'))) +
-    '</div>' +
-    H.card('tecon', '03', 'Tier economics', 'Revenue share, suites share and what a suite earns in each tier',
+  return { tmrev: H.card('tmrev', '01', 'Revenue mix by suite tier', 'Share of ticket revenue · ' + H.shipName(D, ctx),
+      H.body(C.stack({ labels: tm.map(c => c.label), series: ser('rev'), pct: true, tipFmt: U.money, every: 1, height: 250, label: 'Revenue mix by suite tier' })) + C.legend(ser('rev'))),
+    tmsuite: H.card('tmsuite', '02', 'Suite mix by tier', 'Share of suites sold', H.body(C.stack({ labels: tm.map(c => c.label), series: ser('suites'), pct: true, tipFmt: U.int, every: 1, height: 250, label: 'Suite mix by tier' })) + C.legend(ser('suites'))),
+    tecon: H.card('tecon', '03', 'Tier economics', 'Revenue share, suites share and what a suite earns in each tier',
       H.table([{ h: '', l: 1 }].concat(tm.map(c => ({ h: c.label }))), rows) +
-      '<div class="foot-note">Budget columns spread budgeted discounts evenly across tiers. Next-year actuals lean towards premium tiers early because that inventory books first.</div>') +
-    H.card('tmap', '04', 'Suite categories by ship', 'How each ship\'s suite categories map to the three tiers', H.table([{ h: 'Ship', l: 1 }].concat(tiers.map(t => ({ h: t, l: 1 }))), map));
+      '<div class="foot-note">Budget columns spread budgeted discounts evenly across tiers. Next-year actuals lean towards premium tiers early because that inventory books first.</div>'),
+    tmap: H.card('tmap', '04', 'Suite categories by ship', 'How each ship\'s suite categories map to the three tiers', H.table([{ h: 'Ship', l: 1 }].concat(tiers.map(t => ({ h: t, l: 1 }))), map)) };
 };
 
 /* ============================== GUESTS ============================== */
-V.render.guests = function (D, ctx, ui) {
+P.guests = function (D, ctx, ui) {
   const g = E.guests(D, ctx, ctx.year), am = U.mi(ctx.asOf), dm = D.dims, prod = E.production(D, ctx, ctx.asOf);
   const months = H.months(am - 12, am).filter(m => m >= g.lo), ix = m => m - g.lo;
   const shipSer = dm.ships.map((s, i) => ({ name: s.name, color: C.PAL[i % 8], values: months.map(m => g.byShip[i][ix(m)]) })).filter((s, i) => ctx.ship < 0 || ctx.ship === i);
@@ -203,29 +202,26 @@ V.render.guests = function (D, ctx, ui) {
       .concat([U.pct(x.tot / regs.reduce((s, rg) => s + rg.tot, 0), 0)]));
   geoRows.push({ cls: 'sub', cells: ['Guests'].concat(regs.map(rg => U.int(rg.tot))).concat([U.int(regs.reduce((s, rg) => s + rg.tot, 0))]) });
 
-  return '<div class="row two">' +
-    H.card('gsail', '01', 'Guests sailed', 'Revenue guests by sailing month, with the repeat-guest share · ' + H.shipName(D, ctx),
+  return { gsail: H.card('gsail', '01', 'Guests sailed', 'Revenue guests by sailing month, with the repeat-guest share · ' + H.shipName(D, ctx),
       H.body(C.stack({ labels: months.map(U.miLabel), series: shipSer, yFmt: U.int, tipFmt: U.int, line: repLine, label: 'Guests sailed by month' })) +
-      C.legend(shipSer.concat([{ name: 'Repeat guests, % (right axis)', color: 'var(--c2)' }]))) +
-    H.card('gbook', '02', 'Guests booking', 'Distinct bookers by booking month, with the share of bookings from repeat guests',
+      C.legend(shipSer.concat([{ name: 'Repeat guests, % (right axis)', color: 'var(--c2)' }]))),
+    gbook: H.card('gbook', '02', 'Guests booking', 'Distinct bookers by booking month, with the share of bookings from repeat guests',
       H.body(C.stack({ labels: months.map(U.miLabel), series: [{ name: 'Distinct bookers', color: 'var(--c1)', values: bk.map(r => r.nBookers) }], yFmt: U.int, tipFmt: U.int,
         line: { name: 'Repeat share of bookings', color: 'var(--c2)', fmt: v => U.pct(v, 0), values: bk.map(r => ratio(r.rep, r.count)) }, label: 'Bookers by month' })) +
-      C.legend([{ name: 'Distinct bookers', color: 'var(--c1)' }, { name: 'Repeat share, % (right axis)', color: 'var(--c2)' }])) +
-    '</div><div class="row two">' +
-    H.card('gfvc', '03', 'Future-voyage conversion', 'Guests booking their next voyage on board or within 14 days of sailing, as a share of guests sailed that month',
+      C.legend([{ name: 'Distinct bookers', color: 'var(--c1)' }, { name: 'Repeat share, % (right axis)', color: 'var(--c2)' }])),
+    gfvc: H.card('gfvc', '03', 'Future-voyage conversion', 'Guests booking their next voyage on board or within 14 days of sailing, as a share of guests sailed that month',
       H.body(C.lines({ labels: months.map(U.miLabel), yFmt: v => U.pct(v, 0), tipFmt: v => U.pct(v), every: 2,
-        series: [{ name: 'FVC conversion', color: 'var(--c3)', values: fvc }], label: 'Future-voyage conversion by sailing month' }))) +
-    H.card('grep', '04', 'Repeat bookings by ship', 'Bookings made this year by guests who have sailed before',
+        series: [{ name: 'FVC conversion', color: 'var(--c3)', values: fvc }], label: 'Future-voyage conversion by sailing month' }))),
+    grep: H.card('grep', '04', 'Repeat bookings by ship', 'Bookings made this year by guests who have sailed before',
       H.table([{ h: 'Ship', l: 1 }, { h: 'Bookings YTD' }, { h: 'From repeat guests' }, { h: 'Repeat rate' }],
         rs.map(r => [r.name, U.int(r.bookings), U.int(r.repeat), U.pct(ratio(r.repeat, r.bookings))])
-          .concat(rs.length > 1 ? [{ cls: 'sub', cells: ['All ships', U.int(rsTot.bookings), U.int(rsTot.repeat), U.pct(ratio(rsTot.repeat, rsTot.bookings))] }] : []))) +
-    '</div>' +
-    H.card('ggeo', '05', ctx.year + ' guest geography by sailing region', 'Where each region\'s guests come from · share of that region\'s guests on the books · ' + H.shipName(D, ctx),
-      H.table([{ h: 'Guest market', l: 1 }].concat(regs.map(rg => ({ h: rg.n }))).concat([{ h: 'All regions' }]), geoRows, 'heat'));
+          .concat(rs.length > 1 ? [{ cls: 'sub', cells: ['All ships', U.int(rsTot.bookings), U.int(rsTot.repeat), U.pct(ratio(rsTot.repeat, rsTot.bookings))] }] : []))),
+    ggeo: H.card('ggeo', '05', ctx.year + ' guest geography by sailing region', 'Where each region\'s guests come from · share of that region\'s guests on the books · ' + H.shipName(D, ctx),
+      H.table([{ h: 'Guest market', l: 1 }].concat(regs.map(rg => ({ h: rg.n }))).concat([{ h: 'All regions' }]), geoRows, 'heat')) };
 };
 
 /* ===================== DILUTION & CANCELLATIONS ===================== */
-V.render.dilution = function (D, ctx, ui) {
+P.dilution = function (D, ctx, ui) {
   const cutoff = E.cutoff(D, ctx), prod = E.production(D, ctx, cutoff), last = U.mi(cutoff), dm = D.dims;
   const months = H.months(last - 12, last).filter(m => m >= prod.lo), rowsM = months.map(m => prod.rows[m - prod.lo]);
   const ser = dm.dtypes.map((name, i) => ({ name, color: C.PAL[(i + 1) % 8], values: rowsM.map(r => r.dt[i]) })).slice(1)
@@ -249,22 +245,22 @@ V.render.dilution = function (D, ctx, ui) {
       '<p><b>Weekly cancellation rate.</b> Revenue cancelled in the week over the unsailed booked revenue at the start of the week. Transfers are always excluded.</p></div>'
     : '<div class="pad policy"><p>Policy tables are not part of the booking extract. The weekly cancellation rate is revenue cancelled in the week over the unsailed booked revenue at the start of the week, with transfers excluded.</p></div>';
 
-  return H.card('dil', '01', 'Dilution by type', 'Discount value by booking month, with the take rate against list fare · ' + H.shipName(D, ctx) +
+  return { dil: H.card('dil', '01', 'Dilution by type', 'Discount value by booking month, with the take rate against list fare · ' + H.shipName(D, ctx) +
       (ctx.flags.alignAsOf ? '' : ' · through the data pull of ' + U.dateLabel(D.meta.pull) + (partial ? ', so the last month is partial' : '')),
       H.body(C.stack({ labels: months.map(U.miLabel), series: ser, tipFmt: U.money, width: 1120, height: 290, every: 1, line: { name: 'Take rate', color: 'var(--ink-2)', fmt: v => U.pct(v, 1), values: take }, label: 'Dilution by type and month' })) +
-      C.legend(ser.concat([{ name: 'Take rate, % of list (right axis)', color: 'var(--ink-2)' }]))) +
-    H.card('promo', '02', 'Promotion take rates', 'Share of each month\'s bookings carrying each promotion',
-      H.body(C.lines({ labels: months.map(U.miLabel), series: pser, yFmt: v => U.pct(v, 0), tipFmt: v => U.pct(v), every: 1, width: 1120, height: 280, label: 'Promotion take rates' })) + C.legend(pser)) +
-    H.card('wcan', '03', 'Weekly cancellation rate', 'Cancelled revenue over the unsailed book, 26 weeks to ' + U.dateLabel(ctx.asOf) + ' · transfers excluded',
+      C.legend(ser.concat([{ name: 'Take rate, % of list (right axis)', color: 'var(--ink-2)' }]))),
+    promo: H.card('promo', '02', 'Promotion take rates', 'Share of each month\'s bookings carrying each promotion',
+      H.body(C.lines({ labels: months.map(U.miLabel), series: pser, yFmt: v => U.pct(v, 0), tipFmt: v => U.pct(v), every: 1, width: 1120, height: 280, label: 'Promotion take rates' })) + C.legend(pser)),
+    wcan: H.card('wcan', '03', 'Weekly cancellation rate', 'Cancelled revenue over the unsailed book, 26 weeks to ' + U.dateLabel(ctx.asOf) + ' · transfers excluded',
       H.body(C.lines({ labels: wk.map(w => U.shortDate(w.end).replace(/ \d\d$/, '')), series: [{ name: 'Weekly cancellation rate', color: 'var(--crit)', values: wk.map(w => w.rate) }],
-        yFmt: v => U.pct(v, 2), every: 2, width: 1120, height: 260, label: 'Weekly cancellation rate' }))) +
-    H.card('cmon', '04', 'Cancellations by month', 'Cancelled revenue, the share that was a transfer, and the fees kept · ' + H.shipName(D, ctx),
-      H.table([{ h: 'Month', l: 1 }, { h: 'Bookings' }, { h: 'Cancelled' }, { h: '% of bookings' }, { h: 'Of which C2C' }, { h: 'Fees kept' }, { h: 'Fees, % of cancelled' }, { h: 'Count' }], canRows)) +
-    H.card('policy', '05', 'Cancellation and dilution policy', 'The rules the two series above are produced under', policy);
+        yFmt: v => U.pct(v, 2), every: 2, width: 1120, height: 260, label: 'Weekly cancellation rate' }))),
+    cmon: H.card('cmon', '04', 'Cancellations by month', 'Cancelled revenue, the share that was a transfer, and the fees kept · ' + H.shipName(D, ctx),
+      H.table([{ h: 'Month', l: 1 }, { h: 'Bookings' }, { h: 'Cancelled' }, { h: '% of bookings' }, { h: 'Of which C2C' }, { h: 'Fees kept' }, { h: 'Fees, % of cancelled' }, { h: 'Count' }], canRows)),
+    policy: H.card('policy', '05', 'Cancellation and dilution policy', 'The rules the two series above are produced under', policy) };
 };
 
 /* ============================= VOYAGES ============================= */
-V.render.voyages = function (D, ctx, ui) {
+P.voyages = function (D, ctx, ui) {
   const y = ctx.year, dm = D.dims;
   let rows = E.voyageTable(D, ctx, y);
   if (ui.voyQ !== 'all') rows = rows.filter(r => U.miQuarter(r.v.smi) === +ui.voyQ);
@@ -280,14 +276,14 @@ V.render.voyages = function (D, ctx, ui) {
       r.gpd == null ? '—' : { v: U.dollars(r.gpd), s: r.gpd }, d(r.gpd, r.gpdFc, signedDollars, 0.5), d(r.gpd, r.gpdBud, signedDollars, 0.5),
       { v: U.money(r.tix), s: r.tix }, d(r.tix, r.revFc, U.signedMoney, 500), d(r.tix, r.revBud, U.signedMoney, 500), { v: U.money(r.prev3), s: r.prev3 },
       H.delta(r.tix - r.prev3, U.signedMoney, true, 500)] })), 'voy', 'voy');
-  return H.card('voy', '01', y + ' voyages against forecast, budget and three months ago', rows.length + ' voyages · ' + H.shipName(D, ctx) +
+  return { voy: H.card('voy', '01', y + ' voyages against forecast, budget and three months ago', rows.length + ' voyages · ' + H.shipName(D, ctx) +
       ' · click a column heading to sort · open voyages show the book to date, so their gaps to target are revenue still to come',
     body, '<input type="search" class="filter" data-filter="voy" placeholder="Filter by voyage, ship or region" aria-label="Filter voyages" value="' + U.esc(ui.filter.voy || '') + '">' +
-    H.tabs('voyq', [['all', 'All']].concat(Q.map((q, i) => [i, q])), ui.voyQ, 'Sailing quarter'));
+    H.tabs('voyq', [['all', 'All']].concat(Q.map((q, i) => [i, q])), ui.voyQ, 'Sailing quarter')) };
 };
 
 /* ========================== REVENUE TABLES ========================== */
-V.render.revenue = function (D, ctx, ui) {
+P.revenue = function (D, ctx, ui) {
   const prod = E.production(D, ctx, ctx.asOf), am = U.mi(ctx.asOf), dm = D.dims;
   const n = { month: 1, t3: 3, t12: 12 }[ui.revTab], from = am - n + 1;
   const cur = sumRows(prod.rows, from, am, prod.lo), py = sumRows(prod.rows, from - 12, am - 12, prod.lo);
@@ -308,64 +304,64 @@ V.render.revenue = function (D, ctx, ui) {
   const ser = dm.ships.map((s, i) => ({ name: s.name, color: C.PAL[i % 8], values: months.map(m => { const r = prod.rows[m - prod.lo]; return Math.max(0, r.ship[i] - r.shipCan[i]); }) }))
     .filter((s, i) => ctx.ship < 0 || ctx.ship === i);
   const label = n === 1 ? U.miLabel(am) : U.miLabel(from) + ' – ' + U.miLabel(am), pyLabel = n === 1 ? U.miLabel(am - 12) : U.miLabel(from - 12) + ' – ' + U.miLabel(am - 12);
-  return H.card('revsum', '01', 'Revenue summary', 'Booking production across all sailing years · ' + H.shipName(D, ctx),
+  return { revsum: H.card('revsum', '01', 'Revenue summary', 'Booking production across all sailing years · ' + H.shipName(D, ctx),
       H.table([{ h: 'Measure', l: 1 }, { h: label }, { h: pyLabel }, { h: 'Change' }], rows),
-      H.tabs('rev', [['month', 'Month'], ['t3', 'Trailing 3M'], ['t12', 'Trailing 12M']], ui.revTab, 'Period')) +
-    '<div class="row two">' +
-    H.card('revship', '02', 'Net bookings by ship', label + ' against ' + pyLabel,
-      H.table([{ h: 'Ship', l: 1 }, { h: label }, { h: pyLabel }, { h: 'Change' }, { h: 'Share' }], shipRows)) +
-    H.card('revtrend', '03', 'Net bookings by month', 'Bookings less cancellations, by ship',
-      H.body(C.stack({ labels: months.map(U.miLabel), series: ser, tipFmt: U.money, label: 'Net bookings by month and ship' })) + C.legend(ser)) +
-    '</div>';
+      H.tabs('rev', [['month', 'Month'], ['t3', 'Trailing 3M'], ['t12', 'Trailing 12M']], ui.revTab, 'Period')),
+    revship: H.card('revship', '02', 'Net bookings by ship', label + ' against ' + pyLabel,
+      H.table([{ h: 'Ship', l: 1 }, { h: label }, { h: pyLabel }, { h: 'Change' }, { h: 'Share' }], shipRows)),
+    revtrend: H.card('revtrend', '03', 'Net bookings by month', 'Bookings less cancellations, by ship',
+      H.body(C.stack({ labels: months.map(U.miLabel), series: ser, tipFmt: U.money, label: 'Net bookings by month and ship' })) + C.legend(ser)) };
 };
 
 /* ======================== DEFINITIONS & DATA ======================== */
 const MEASURES = [
-  ['Gross Revenues', 'Ticket revenue gross of commissions, net of the month\'s cancellations, net of dilution; revenue guests only', '$M', 'revenue'],
-  ['Bookings ($)', 'Booked revenue produced in the period', '$', 'revenue'],
-  ['Bookings (count)', 'Booking count; each suite in a charter counts as one booking', '#', 'revenue'],
-  ['Suites', 'Suite count booked', '#', 'suites'],
-  ['PCDs', 'Passenger cruise days = guests × days', '#', 'revenue'],
+  ['Gross Revenues', 'Ticket revenue gross of commissions, net of the month\'s cancellations, net of dilution; revenue guests only', '$M', 'detail'],
+  ['Bookings ($)', 'Booked revenue produced in the period', '$', 'detail'],
+  ['Bookings (count)', 'Booking count; each suite in a charter counts as one booking', '#', 'detail'],
+  ['Suites', 'Suite count booked', '#', 'guests'],
+  ['PCDs', 'Passenger cruise days = guests × days', '#', 'detail'],
   ['APCDs', 'Available PCDs, net of non-revenue voyages', '#', 'voyages'],
   ['GPD / PPD', 'Gross price per day = gross revenue ÷ PCDs', '$', 'voyages'],
   ['LF %', 'Load factor = PCDs ÷ APCDs — booking pace to date, not final occupancy', '%', 'voyages'],
-  ['Forecast (FCST)', 'Current-year full-year forecast; voyages prorated', '$M', 'togo'],
-  ['Budget (BDGT / BP)', 'Budget for the year ahead and the baseline for every year', '$M', 'togo'],
-  ['Outlook', 'Revised forecast: sailed voyages at actual plus the projected finish of the unsailed book', '$M', 'flight'],
-  ['Revenue to-go', 'Target less booked to date, by voyage, ship, quarter and region', '$M', 'togo'],
-  ['Cancellations ($ and %)', 'Cancelled revenue; cancellation fee revenue; share of ticket revenue', '$ / %', 'dilution'],
-  ['Dilution ($ and %)', 'Discount value by type; share of bookings', '$ / %', 'dilution'],
+  ['Forecast (FCST)', 'Current-year full-year forecast; voyages prorated', '$M', 'detail'],
+  ['Budget (BDGT / BP)', 'Budget for the year ahead and the baseline for every year', '$M', 'detail'],
+  ['Outlook', 'Revised forecast: sailed voyages at actual plus the projected finish of the unsailed book', '$M', 'summary'],
+  ['Revenue to-go', 'Target less booked to date, by voyage, ship, quarter and region', '$M', 'detail'],
+  ['Cancellations ($ and %)', 'Cancelled revenue; cancellation fee revenue; share of ticket revenue', '$ / %', 'detail'],
+  ['Dilution ($ and %)', 'Discount value by type; share of bookings', '$ / %', 'actions'],
   ['Guests sailed', 'Revenue guests sailing in the month', '#', 'guests'],
   ['Guests booking', 'Distinct bookers in the month', '#', 'guests'],
   ['Repeaters', 'Guests with a prior sailing', '# / %', 'guests'],
   ['FVC conversion', 'Booked on board or within 14 days of sailing', '# / %', 'guests'],
 ];
 const DERIVED = [
-  ['% of target booked ITD', 'Booked ÷ (forecast or budget), by ship, quarter, region and year', 'togo'],
-  ['Target secured % vs STLY', 'The same calendar point in the prior year', 'pace'],
-  ['YoY / MoM / vs Y-2 %', 'Period-over-period change on bookings', 'pace'],
-  ['Pace gap (pp)', 'Current booking curve less the STLY curve, in percentage points', 'pace'],
+  ['% of target booked ITD', 'Booked ÷ (forecast or budget), by ship, quarter, region and year', 'detail'],
+  ['Target secured % vs STLY', 'The same calendar point in the prior year', 'bookings'],
+  ['YoY / MoM / vs Y-2 %', 'Period-over-period change on bookings', 'bookings'],
+  ['Pace gap (pp)', 'Current booking curve less the STLY curve, in percentage points', 'bookings'],
   ['Actual vs FCST / BDGT delta', 'Per voyage, for load factor, GPD and revenue', 'voyages'],
   ['Revenue vs previous 3 months', 'Per voyage: the book now against the book 91 days earlier', 'voyages'],
-  ['Channel mix %', 'Share of the month and share of year to date', 'channels'],
-  ['Suite mix %', 'Prior-year actual, current-year budget and actual ITD, next-year budget and actual ITD', 'suites'],
-  ['Tier economics', 'Revenue share, suites share and revenue per suite by tier', 'suites'],
+  ['Channel mix %', 'Share of the month and share of year to date', 'actions'],
+  ['Suite mix %', 'Prior-year actual, current-year budget and actual ITD, next-year budget and actual ITD', 'guests'],
+  ['Tier economics', 'Revenue share, suites share and revenue per suite by tier', 'guests'],
   ['Repeater rate', 'On guests sailed and on bookers; repeat bookings by ship', 'guests'],
-  ['Weekly cancellation %', 'Cancelled ÷ unsailed booked revenue, excluding C2C transfers', 'dilution'],
-  ['Dilution take rate', 'Dilution ÷ bookings at list, by type and month', 'dilution'],
+  ['Weekly cancellation %', 'Cancelled ÷ unsailed booked revenue, excluding C2C transfers', 'detail'],
+  ['Dilution take rate', 'Dilution ÷ bookings at list, by type and month', 'actions'],
 ];
-const SLIDES = [
-  ['2–3, 7–8', 'Executive summary and outlook', 'flight'], ['4', 'Channel mix', 'channels'], ['5–6', 'Trade / strategic agency accounts', 'channels'],
-  ['9–21', 'Revenue to-go by ship, quarter and region (current year, then next year)', 'togo'], ['22–23', 'Booking curve tables vs forecast and budget', 'pace'],
-  ['24–28', 'Booking curves vs budget; booking window split', 'pace'], ['30–33', 'Suite tier mix and economics', 'suites'],
-  ['34–37', 'Guests sailed, bookers, repeaters, FVC conversion', 'guests'], ['38–40', 'Dilution and promotion take rates', 'dilution'], ['41–42', 'Cancellations', 'dilution'],
-  ['43–46', 'Voyage watchlists / revenue to-go by voyage', 'togo'], ['48–51', 'Revenue summary tables (month, trailing 3M, trailing 12M)', 'revenue'],
-  ['54–58', 'Guest, repeater and FVC detail', 'guests'], ['59–60', 'Cancellation and dilution policy detail', 'dilution'],
-  ['61–72', 'Per-voyage LF and GPD vs forecast and budget', 'voyages'], ['73–78', 'Guest geography by sailing region', 'guests'],
-  ['79–84', 'Per-voyage revenue vs forecast, budget and prior 3 months', 'voyages'], ['85–88', 'Consolidated booking report, CY vs STLY by quarter', 'pace'],
+const BOARD = [
+  ['Cover page and agendas', 'summary'], ['Executive summary', 'summary'],
+  ['Year-to-date overview: key performance indicators', 'financial'], ['Guest satisfaction', 'financial'], ['Yacht status and safety', 'financial'],
+  ['Month P&L and year-to-date P&L', 'financial'],
+  ['Cumulative bookings against target', 'bookings'], ['Booking outlook: monthly bookings by channel', 'bookings'], ['Monthly booking pace by channel', 'bookings'],
+  ['Budget-to-outlook bridge and booking curve', 'bookings'], ['Financial outlook', 'bookings'], ['Cash forecast', 'bookings'],
+  ['Marketing spend update; macro and travel trends', 'bookings'], ['Booking momentum and forecast coverage', 'bookings'],
+  ['Management action plan, and the supporting update from each function', 'actions'], ['Drydock update', 'actions'],
+  ['Budget: sales build-up by channel, target P&L, revenue still to go', 'budget'], ['Outlook for the year after, and the restricted cash position', 'budget'],
+  ['Update on bonds', 'bonds'], ['Newbuild, growth framework and fleet expansion scenarios', 'bonds'],
+  ['Supporting booking detail: revenue to-go, voyages, suites, guests, cancellations', 'detail'],
 ];
 
-V.render.defs = function (D, ctx, ui) {
+P.defs = function (D, ctx, ui) {
   const dm = D.dims, name = id => V.LIST.find(v => v.id === id).label, go = id => '<a href="#" data-act="view:' + id + '">' + name(id) + '</a>';
   const years = [...new Set(D.voyages.map(v => v.year))].sort();
   const dims = [
@@ -380,26 +376,26 @@ V.render.defs = function (D, ctx, ui) {
   ];
   const contract = k => H.table([{ h: 'Column', l: 1 }, { h: 'Type', l: 1 }, { h: 'Required', l: 1 }, { h: 'Meaning', l: 1 }],
     CBR.sigma.CONTRACT[k].map(c => ['<code>' + c[0] + '</code>', c[1], c[2] ? 'yes' : 'optional', c[3] || '']));
-  return H.card('dsrc', '01', 'Where the numbers come from', 'One fact table at voyage × suite × booking-date grain, plus a voyage table',
+  return { dsrc: H.card('dsrc', '01', 'Where the numbers come from', 'One fact table at voyage × suite × booking-date grain, plus a voyage table',
       '<div class="pad policy"><p>Every view on this page resolves to two tables: a <b>bookings</b> table with one row per suite booked on a voyage on a booking date, and a <b>voyages</b> table carrying capacity, budget and forecast. ' +
       'Eighteen base measures and thirteen dimensions generate every view.</p><p><b>Now showing:</b> ' +
       (D.source === 'simulated' ? 'simulated data for ' + D.meta.company + ', a fictional line — ' : 'data from Sigma — ') + D.bookings.length.toLocaleString('en-US') + ' bookings on ' + D.voyages.length +
       ' voyages, extracted ' + U.dateLabel(D.meta.pull) + ' for a ' + U.dateLabel(D.meta.asOf) + ' close.' +
-      (D.source === 'simulated' ? ' The simulated actuals are the plan run through deliberate deviations — a soft booking patch, regional demand shifts, a drydock overrun, a fuel spike — so every variance traces to something that moved.' : '') + '</p></div>') +
-    H.card('dmeas', '02', 'Measures', 'Definitions as used in the booking report',
-      H.table([{ h: 'Measure', l: 1 }, { h: 'Definition', l: 1 }, { h: 'Unit', l: 1 }, { h: 'See', l: 1 }], MEASURES.map(m => ['<b>' + m[0] + '</b>', m[1], m[2], go(m[3])]), 'wrapt')) +
-    H.card('ddim', '03', 'Dimensions', 'Members in the data currently loaded', H.table([{ h: 'Dimension', l: 1 }, { h: 'Members / notes', l: 1 }], dims.map(d => ['<b>' + d[0] + '</b>', d[1]]), 'wrapt')) +
-    H.card('dder', '04', 'Derived metrics', '', H.table([{ h: '#' }, { h: 'Derived metric', l: 1 }, { h: 'Calculation', l: 1 }, { h: 'See', l: 1 }], DERIVED.map((d, i) => [i + 1, '<b>' + d[0] + '</b>', d[1], go(d[2])]), 'wrapt')) +
-    H.card('dadj', '05', 'Adjustments and filters', 'Each is a switch in the bar under the controls, applied to every view at once',
+      (D.source === 'simulated' ? ' The simulated actuals are the plan run through deliberate deviations — a soft booking patch, regional demand shifts, a drydock overrun, a fuel spike — so every variance traces to something that moved.' : '') + '</p></div>'),
+    dmeas: H.card('dmeas', '02', 'Measures', 'Definitions as used in the booking report',
+      H.table([{ h: 'Measure', l: 1 }, { h: 'Definition', l: 1 }, { h: 'Unit', l: 1 }, { h: 'See', l: 1 }], MEASURES.map(m => ['<b>' + m[0] + '</b>', m[1], m[2], go(m[3])]), 'wrapt')),
+    ddim: H.card('ddim', '03', 'Dimensions', 'Members in the data currently loaded', H.table([{ h: 'Dimension', l: 1 }, { h: 'Members / notes', l: 1 }], dims.map(d => ['<b>' + d[0] + '</b>', d[1]]), 'wrapt')),
+    dder: H.card('dder', '04', 'Derived metrics', '', H.table([{ h: '#' }, { h: 'Derived metric', l: 1 }, { h: 'Calculation', l: 1 }, { h: 'See', l: 1 }], DERIVED.map((d, i) => [i + 1, '<b>' + d[0] + '</b>', d[1], go(d[2])]), 'wrapt')),
+    dadj: H.card('dadj', '05', 'Adjustments and filters', 'Each is a switch in the bar under the controls, applied to every view at once',
       H.table([{ h: 'Adjustment', l: 1 }, { h: 'Now', l: 1 }, { h: 'Impact on the pull', l: 1 }],
-        V.ADJUSTMENTS.map(a => ['<b>' + a.on + '</b>', '<span class="pill ' + (ctx.flags[a.key] ? 'ok' : '') + '">' + (ctx.flags[a.key] ? 'on' : 'off') + '</span>', a.def]), 'wrapt')) +
-    H.card('dmap', '06', 'Deck to dashboard map', 'Which tab replaces which slides of the 88-slide booking report',
-      H.table([{ h: 'Slides', l: 1 }, { h: 'Deck view', l: 1 }, { h: 'Dashboard tab', l: 1 }], SLIDES.map(s => [s[0], s[1], go(s[2])]))) +
-    H.card('dsig', '07', 'Sigma data contract', 'Embed this page in a Sigma workbook as a plugin, then point it at two elements with these column names',
+        V.ADJUSTMENTS.map(a => ['<b>' + a.on + '</b>', '<span class="pill ' + (ctx.flags[a.key] ? 'ok' : '') + '">' + (ctx.flags[a.key] ? 'on' : 'off') + '</span>', a.def]), 'wrapt')),
+    dmap: H.card('dmap', '06', 'Board deck to dashboard map', 'The deck\'s slides in order, and the tab that carries each',
+      H.table([{ h: '#' }, { h: 'Board deck slide or section', l: 1 }, { h: 'Dashboard tab', l: 1 }], BOARD.map((b, n) => [n + 1, b[0], go(b[1])]))),
+    dsig: H.card('dsig', '07', 'Sigma data contract', 'Embed this page in a Sigma workbook as a plugin, then point it at two elements with these column names',
       '<div class="pad policy"><p>Column names are matched ignoring case, spaces and punctuation. Dates may be Sigma datetimes or ISO strings. Sigma hands data over 25,000 rows at a time, so each element is read page by page ' +
       'and nothing is drawn until both tables are complete. Budget and forecast arrive as revenue and guest days per voyage; ' +
       'operating costs are not part of the extract, so with Sigma data the profit bridge stops at ticket revenue less commissions and the cash river shows refunds and commissions only. ' +
       '<b>The connector follows Sigma\'s published plugin API and is tested against a simulated host, but has not yet been run inside a workbook.</b></p></div>' +
-      '<h3 class="subhead">Bookings element</h3>' + contract('bookings') + '<h3 class="subhead">Voyages element</h3>' + contract('voyages'));
+      '<h3 class="subhead">Bookings element</h3>' + contract('bookings') + '<h3 class="subhead">Voyages element</h3>' + contract('voyages')) };
 };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
