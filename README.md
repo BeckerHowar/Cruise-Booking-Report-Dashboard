@@ -44,6 +44,9 @@ The first six tabs are the board agenda. The rest is the supporting detail.
 | Suites & guests | Suite tier mix and economics, guests sailed, bookers, repeaters, guest geography |
 | Definitions | Every measure, dimension and adjustment, and the Sigma data contract |
 
+The earlier layout, organised around the booking report instead of the board agenda (Flight deck, Pace,
+Revenue to-go and so on), is kept as a single page under [`old/`](old/).
+
 Some board slides cannot come from booking data: guest satisfaction scores, marketing spend, market
 commentary, the action plan itself, investor relations. Each keeps its place in the order as a
 one-line note marked *Narrative*, so the page reads in the same sequence as the deck.
